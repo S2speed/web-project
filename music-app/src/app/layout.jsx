@@ -1,8 +1,7 @@
 import "./globals.css";
 import { UserProvider } from "@/contexts/UserContext";
 import { PlayerProvider } from "@/contexts/PlayerContext";
-import Sidebar from "@/components/layout/Sidebar";
-import Footer from "@/components/layout/Footer";
+import AppShell from "@/components/layout/AppShell";
 import SeedInitializer from "@/components/common/SeedInitializer";
 
 export const metadata = {
@@ -17,11 +16,7 @@ export default function RootLayout({ children }) {
         <SeedInitializer />
         <UserProvider>
           <PlayerProvider>
-            <div className="flex h-full overflow-hidden">
-              <Sidebar />
-              <main className="flex-1 overflow-y-auto pb-24">{children}</main>
-            </div>
-            <Footer />
+            <AppShell>{children}</AppShell>
           </PlayerProvider>
         </UserProvider>
       </body>
