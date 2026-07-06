@@ -28,6 +28,19 @@ export const SUBSCRIPTION_TYPES = {
   GOLD: "gold",
 };
 
+// Subscription-specific capabilities used across profile and playback features
+export const SUBSCRIPTION_LIMITS = {
+  [SUBSCRIPTION_TYPES.FREE]: {
+    canUploadAvatar: false,
+  },
+  [SUBSCRIPTION_TYPES.SILVER]: {
+    canUploadAvatar: true,
+  },
+  [SUBSCRIPTION_TYPES.GOLD]: {
+    canUploadAvatar: true,
+  },
+};
+
 // Notification types
 export const NOTIFICATION_TYPES = {
   SUBSCRIPTION: "subscription",
