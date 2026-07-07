@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -27,7 +27,8 @@ export default function Sidebar() {
     roleMenu.push({ href: '/admin/dashboard', label: 'داشبورد مدیریت', icon: '📊' });
   }
 
-  const allMenu = [...mainMenu, ...roleMenu];
+  const profileMenu = user ? [{ href: `/profile/${user.id}`, label: 'نمایه کاربری', icon: '👤' }] : [];
+  const allMenu = [...mainMenu, ...profileMenu, ...roleMenu];
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-l border-white/10 bg-slate-950/95 p-4 text-white backdrop-blur md:flex">
