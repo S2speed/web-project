@@ -52,6 +52,8 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busyId, setBusyId] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
 
   useEffect(() => {
@@ -89,14 +91,19 @@ export default function NotificationsPage() {
   }, [user?.id]);
 
   const unreadCount = notifications.filter((notification) => !notification.isRead).length;
+  const readCount = notifications.length - unreadCount;
   const filters = useMemo(() => {
     const availableTypes = Array.from(new Set(notifications.map((notification) => notification.type)));
-    return ['all', 'unread', ...availableTypes];
+    return ['all', 'unread', 'read', ...availableTypes];
   }, [notifications]);
 
   const filteredNotifications = useMemo(() => {
     if (activeFilter === 'unread') {
       return notifications.filter((notification) => !notification.isRead);
+    }
+
+    if (activeFilter === 'read') {
+      return notifications.filter((notification) => notification.isRead);
     }
 
     if (activeFilter === 'all') {
@@ -111,13 +118,18 @@ export default function NotificationsPage() {
       return;
     }
 
+    setBusyId(notification.id);
+    setError('');
+    setNotice('');
     const result = await markNotificationAsRead(notification.id);
 
     if (result.success) {
       setNotifications((previous) => previous.map((item) => (item.id === notification.id ? result.data : item)));
+      setNotice('اعلان به‌عنوان خوانده‌شده علامت‌گذاری شد.');
     } else {
       setError(result.error?.message || 'خطا در علامت‌گذاری اعلان');
     }
+    setBusyId('');
   };
 
   const handleReadAll = async () => {
@@ -125,23 +137,33 @@ export default function NotificationsPage() {
       return;
     }
 
+    setBusyId('all');
+    setError('');
+    setNotice('');
     const result = await markAllNotificationsAsRead(user.id);
 
     if (result.success) {
       setNotifications((previous) => previous.map((item) => ({ ...item, isRead: true, readAt: item.readAt || new Date().toISOString() })));
+      setNotice('تمام اعلان‌ها خوانده شدند.');
     } else {
       setError(result.error?.message || 'خطا در خواندن همه اعلانات');
     }
+    setBusyId('');
   };
 
   const handleDelete = async (notificationId) => {
+    setBusyId(notificationId);
+    setError('');
+    setNotice('');
     const result = await deleteNotification(notificationId);
 
     if (result.success) {
       setNotifications((previous) => previous.filter((item) => item.id !== notificationId));
+      setNotice('اعلان حذف شد.');
     } else {
       setError(result.error?.message || 'خطا در حذف اعلان');
     }
+    setBusyId('');
   };
 
   const handleOpen = async (notification) => {
@@ -189,12 +211,19 @@ export default function NotificationsPage() {
         </header>
 
         {error && <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">{error}</div>}
+        {notice && <div role="status" className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">{notice}</div>}
 
         <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 md:p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap gap-2">
               {filters.map((filter) => {
-                const label = filter === 'all' ? 'همه' : filter === 'unread' ? 'خوانده‌نشده' : typeMeta[filter]?.label || filter;
+                const label = filter === 'all'
+                  ? `همه (${new Intl.NumberFormat('fa-IR').format(notifications.length)})`
+                  : filter === 'unread'
+                    ? `خوانده‌نشده (${new Intl.NumberFormat('fa-IR').format(unreadCount)})`
+                    : filter === 'read'
+                      ? `خوانده‌شده (${new Intl.NumberFormat('fa-IR').format(readCount)})`
+                      : typeMeta[filter]?.label || filter;
                 const isActive = activeFilter === filter;
 
                 return (
@@ -212,10 +241,10 @@ export default function NotificationsPage() {
             <button
               type="button"
               onClick={handleReadAll}
-              disabled={unreadCount === 0}
+              disabled={unreadCount === 0 || busyId === 'all'}
               className="rounded-full bg-emerald-400 px-5 py-2 text-sm font-bold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              خواندن همه اعلانات
+              {busyId === 'all' ? 'در حال پردازش...' : 'خواندن همه اعلانات'}
             </button>
           </div>
         </section>
@@ -247,15 +276,16 @@ export default function NotificationsPage() {
                       <button
                         type="button"
                         onClick={() => handleMarkAsRead(notification)}
-                        disabled={notification.isRead}
+                        disabled={notification.isRead || busyId === notification.id}
                         className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        علامت‌گذاری به عنوان خوانده‌شده
+                        {busyId === notification.id ? 'در حال پردازش...' : 'علامت‌گذاری به عنوان خوانده‌شده'}
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDelete(notification.id)}
-                        className="rounded-xl bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-100 transition hover:bg-red-500/25"
+                        disabled={busyId === notification.id}
+                        className="rounded-xl bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-100 transition hover:bg-red-500/25 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         حذف اعلان
                       </button>
