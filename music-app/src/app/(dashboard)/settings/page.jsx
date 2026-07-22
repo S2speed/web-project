@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/contexts/UserContext';
-import { logout as apiLogout, updateUser } from '@/lib/mockApi';
+import { updateUser } from '@/lib/mockApi';
 import { SUBSCRIPTION_TYPES as SUBSCRIPTIONS } from '@/utils/constants';
 
 const subscriptionLabels = {
@@ -17,6 +17,18 @@ const subscriptionDescriptions = {
   [SUBSCRIPTIONS.FREE]: 'مناسب شروع کار با محدودیت پلی‌لیست و بدون آپلود عکس پروفایل.',
   [SUBSCRIPTIONS.SILVER]: 'امکانات بیشتر برای پلی‌لیست‌ها، دانلود و عکس پروفایل.',
   [SUBSCRIPTIONS.GOLD]: 'دسترسی کامل، آمارهای ویژه و مشاهده زودهنگام آثار جدید.',
+};
+
+const subscriptionFeatures = {
+  [SUBSCRIPTIONS.FREE]: ['۶۰ استریم روزانه', 'حداکثر ۶ پلی‌لیست', 'بدون دانلود آهنگ'],
+  [SUBSCRIPTIONS.SILVER]: ['استریم نامحدود', 'حداکثر ۱۰۰ پلی‌لیست', 'دانلود و تصویر نمایه'],
+  [SUBSCRIPTIONS.GOLD]: ['تمام امکانات نقره‌ای', 'پلی‌لیست نامحدود', 'دسترسی زودهنگام و آمار کامل'],
+};
+
+const subscriptionStyle = {
+  [SUBSCRIPTIONS.FREE]: 'border-slate-500/30 bg-slate-500/[0.06]',
+  [SUBSCRIPTIONS.SILVER]: 'border-slate-200/30 bg-slate-200/[0.06]',
+  [SUBSCRIPTIONS.GOLD]: 'border-amber-300/30 bg-amber-300/[0.07]',
 };
 
 const defaultSettings = {
@@ -52,7 +64,10 @@ export default function SettingsPage() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isChangingSubscription, setIsChangingSubscription] = useState(false);
+  const [activeSubscription, setActiveSubscription] = useState(SUBSCRIPTIONS.FREE);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deletePhrase, setDeletePhrase] = useState('');
 
   useEffect(() => {
     if (!user) {
@@ -67,6 +82,7 @@ export default function SettingsPage() {
       appSound: user.appSound ?? defaultSettings.appSound,
       language: user.language || defaultSettings.language,
     });
+    setActiveSubscription(user.subscription || SUBSCRIPTIONS.FREE);
   }, [user]);
 
   const handleNotificationChange = (key, value) => {
@@ -94,12 +110,33 @@ export default function SettingsPage() {
     const result = await updateUser(user.id, settings);
 
     if (result.success) {
-      setNotice('تنظیمات برنامه ذخیره شد. برای اعمال کامل روی نوار کناری، یک بار صفحه را تازه‌سازی کنید.');
+      setNotice('تنظیمات برنامه با موفقیت ذخیره شد.');
     } else {
       setError(result.error?.message || 'خطا در ذخیره تنظیمات');
     }
 
     setIsSaving(false);
+  };
+
+  const handleSubscriptionChange = async (nextSubscription) => {
+    if (!user || nextSubscription === activeSubscription) {
+      return;
+    }
+
+    setIsChangingSubscription(true);
+    setNotice('');
+    setError('');
+
+    const result = await updateUser(user.id, { subscription: nextSubscription });
+
+    if (result.success) {
+      setActiveSubscription(nextSubscription);
+      setNotice(`اشتراک ${subscriptionLabels[nextSubscription]} در نسخه ماک فعال شد.`);
+    } else {
+      setError(result.error?.message || 'خطا در تغییر اشتراک');
+    }
+
+    setIsChangingSubscription(false);
   };
 
   const handleDeleteAccount = async () => {
@@ -109,7 +146,11 @@ export default function SettingsPage() {
 
     if (!deleteConfirm) {
       setDeleteConfirm(true);
-      setNotice('برای حذف حساب، دوباره روی دکمه حذف حساب کلیک کنید.');
+      return;
+    }
+
+    if (deletePhrase !== 'حذف حساب') {
+      setError('برای تایید، عبارت «حذف حساب» را دقیق وارد کنید.');
       return;
     }
 
@@ -124,7 +165,6 @@ export default function SettingsPage() {
     });
 
     if (result.success) {
-      await apiLogout();
       await logout();
       router.push('/login');
       return;
@@ -153,7 +193,7 @@ export default function SettingsPage() {
     );
   }
 
-  const subscription = user.subscription || SUBSCRIPTIONS.FREE;
+  const subscription = activeSubscription;
 
   return (
     <div className="min-h-screen bg-slate-950 px-4 py-8 text-white md:px-8" dir="rtl">
@@ -246,18 +286,46 @@ export default function SettingsPage() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
+            <section id="subscription" className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
               <h2 className="text-xl font-bold">اشتراک</h2>
               <div className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4">
                 <p className="text-sm text-emerald-100">اشتراک فعلی</p>
                 <p className="mt-1 text-2xl font-black text-emerald-200">{subscriptionLabels[subscription]}</p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">{subscriptionDescriptions[subscription]}</p>
               </div>
-              <Link href="/settings#subscription" className="mt-4 inline-flex w-full justify-center rounded-xl bg-emerald-400 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300">
-                رفتن به پرداخت / تغییر اشتراک
-              </Link>
-              <p className="mt-2 text-xs leading-5 text-slate-500">در فاز اول، این گزینه فقط مسیر رابط کاربری پرداخت فاز دوم را نشان می‌دهد.</p>
+              <p className="mt-4 text-xs leading-5 text-slate-500">انتخاب طرح در این فاز به‌صورت ماک ذخیره می‌شود؛ اتصال به درگاه پرداخت مربوط به فاز بک‌اند است.</p>
             </section>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
+          <div>
+            <p className="text-sm text-emerald-200">مدیریت اشتراک</p>
+            <h2 className="mt-1 text-2xl font-black">انتخاب طرح مناسب</h2>
+          </div>
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            {Object.values(SUBSCRIPTIONS).map((plan) => {
+              const isCurrent = subscription === plan;
+
+              return (
+                <article key={plan} className={`relative rounded-2xl border p-5 ${subscriptionStyle[plan]} ${isCurrent ? 'ring-2 ring-emerald-400/60' : ''}`}>
+                  {isCurrent && <span className="absolute left-4 top-4 rounded-full bg-emerald-400 px-3 py-1 text-xs font-bold text-slate-950">طرح فعلی</span>}
+                  <h3 className="text-xl font-black">{subscriptionLabels[plan]}</h3>
+                  <p className="mt-3 min-h-12 text-sm leading-6 text-slate-400">{subscriptionDescriptions[plan]}</p>
+                  <ul className="mt-4 space-y-2 text-sm text-slate-300">
+                    {subscriptionFeatures[plan].map((feature) => <li key={feature}>✓ {feature}</li>)}
+                  </ul>
+                  <button
+                    type="button"
+                    onClick={() => handleSubscriptionChange(plan)}
+                    disabled={isCurrent || isChangingSubscription}
+                    className={`mt-6 w-full rounded-xl px-4 py-3 text-sm font-bold transition disabled:cursor-not-allowed ${isCurrent ? 'bg-emerald-400/15 text-emerald-200' : 'bg-white/10 text-white hover:bg-white/15 disabled:opacity-50'}`}
+                  >
+                    {isCurrent ? 'فعال' : isChangingSubscription ? 'در حال تغییر...' : `انتخاب ${subscriptionLabels[plan]}`}
+                  </button>
+                </article>
+              );
+            })}
           </div>
         </section>
 
@@ -266,14 +334,36 @@ export default function SettingsPage() {
           <p className="mt-2 text-sm leading-6 text-red-100/80">
             این گزینه برای نمایش جریان حذف حساب در فاز اول پیاده‌سازی شده است. پس از تایید، حساب در داده‌های موک غیرفعال و کاربر خارج می‌شود.
           </p>
+          {deleteConfirm && (
+            <div className="mt-4 max-w-md rounded-2xl border border-red-300/20 bg-slate-950/40 p-4">
+              <label htmlFor="deletePhrase" className="block text-sm text-red-100">
+                برای تایید، عبارت «حذف حساب» را وارد کنید.
+              </label>
+              <input
+                id="deletePhrase"
+                value={deletePhrase}
+                onChange={(event) => setDeletePhrase(event.target.value)}
+                className="mt-3 w-full rounded-xl border border-red-300/20 bg-slate-950 px-3 py-2 text-white outline-none focus:border-red-300"
+              />
+            </div>
+          )}
           <button
             type="button"
             onClick={handleDeleteAccount}
             disabled={isSaving}
             className="mt-4 rounded-xl bg-red-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {deleteConfirm ? 'تایید حذف حساب' : 'حذف حساب'}
+            {deleteConfirm ? 'تایید نهایی حذف حساب' : 'حذف حساب'}
           </button>
+          {deleteConfirm && (
+            <button
+              type="button"
+              onClick={() => { setDeleteConfirm(false); setDeletePhrase(''); setError(''); }}
+              className="mr-2 mt-4 rounded-xl bg-white/10 px-5 py-3 text-sm font-bold text-white hover:bg-white/15"
+            >
+              انصراف
+            </button>
+          )}
         </section>
 
         <div className="flex justify-end">
