@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useUser } from '@/contexts/UserContext';
@@ -16,6 +17,11 @@ const mainMenu = [
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, isLoading } = useUser();
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    setIsOpen(false);
+  }, [pathname]);
 
   const roleMenu = [];
 
@@ -30,49 +36,99 @@ export default function Sidebar() {
   const profileMenu = user ? [{ href: `/profile/${user.id}`, label: 'نمایه کاربری', icon: '👤' }] : [];
   const allMenu = [...mainMenu, ...profileMenu, ...roleMenu];
 
-  return (
-    <aside className="hidden w-64 shrink-0 flex-col border-l border-white/10 bg-slate-950/95 p-4 text-white backdrop-blur md:flex">
-      <div className="mb-8 text-center">
-        <h1 className="text-2xl font-bold text-emerald-400">Music</h1>
-        <p className="text-xs text-slate-400">سرویس استریم</p>
-      </div>
+  const navigation = (
+    <nav className="space-y-1" aria-label="منوی اصلی">
+      {allMenu.map((item) => {
+        const isActive = pathname === item.href;
 
-      {user && !isLoading && (
-        <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-slate-700">
-              {user.avatar ? (
-                <img src={user.avatar} alt={user.displayName} className="h-full w-full object-cover" />
-              ) : (
-                <span className="text-lg font-semibold">{user.displayName?.[0]}</span>
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-semibold">{user.displayName}</p>
-              <p className="text-xs text-slate-400">{user.role === ROLES.ARTIST ? 'هنرمند' : 'کاربر'}</p>
-            </div>
-          </div>
-        </div>
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
+              isActive ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <span aria-hidden="true">{item.icon}</span>
+            <span>{item.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+
+  return (
+    <>
+      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-slate-950/95 px-4 text-white backdrop-blur lg:hidden">
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          aria-label="باز کردن منوی اصلی"
+          aria-expanded={isOpen}
+          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-xl transition hover:bg-white/15"
+        >
+          ☰
+        </button>
+        <Link href="/" className="text-center" aria-label="صفحه خانه">
+          <span className="block text-lg font-black text-emerald-400">Music</span>
+          <span className="block text-[10px] text-slate-500">سرویس استریم</span>
+        </Link>
+        <Link
+          href={user ? `/profile/${user.id}` : '/login'}
+          aria-label={user ? 'نمایه کاربری' : 'ورود'}
+          className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-sm font-bold"
+        >
+          {user?.avatar ? <img src={user.avatar} alt="" className="h-full w-full object-cover" /> : user?.displayName?.[0] || '○'}
+        </Link>
+      </header>
+
+      {isOpen && (
+        <button
+          type="button"
+          aria-label="بستن منوی اصلی"
+          onClick={() => setIsOpen(false)}
+          className="fixed inset-0 z-[55] bg-slate-950/75 backdrop-blur-sm lg:hidden"
+        />
       )}
 
-      <nav className="space-y-1">
-        {allMenu.map((item) => {
-          const isActive = pathname === item.href;
+      <aside className={`fixed inset-y-0 right-0 z-[60] flex w-[min(19rem,88vw)] flex-col border-l border-white/10 bg-slate-950 p-4 text-white shadow-2xl transition-transform duration-200 lg:hidden ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="mb-6 flex items-center justify-between">
+          <div><h1 className="text-xl font-bold text-emerald-400">Music</h1><p className="text-xs text-slate-400">منوی اصلی</p></div>
+          <button type="button" onClick={() => setIsOpen(false)} aria-label="بستن" className="rounded-xl bg-white/10 px-3 py-1 text-2xl hover:bg-white/15">×</button>
+        </div>
+        {user && !isLoading && <UserCard user={user} />}
+        <div className="mt-5 overflow-y-auto">{navigation}</div>
+      </aside>
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors ${
-                isActive ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
-    </aside>
+      <aside className="hidden w-64 shrink-0 flex-col border-l border-white/10 bg-slate-950/95 p-4 text-white backdrop-blur lg:flex">
+        <div className="mb-8 text-center">
+          <h1 className="text-2xl font-bold text-emerald-400">Music</h1>
+          <p className="text-xs text-slate-400">سرویس استریم</p>
+        </div>
+
+        {user && !isLoading && <UserCard user={user} />}
+        <div className="mt-5 overflow-y-auto">{navigation}</div>
+      </aside>
+    </>
+  );
+}
+
+function UserCard({ user }) {
+  const roleLabels = {
+    [ROLES.ARTIST]: 'هنرمند',
+    [ROLES.ADMIN]: 'مدیر سامانه',
+    [ROLES.SUPPORT]: 'پشتیبان',
+    [ROLES.LISTENER]: 'شنونده',
+  };
+
+  return (
+    <Link href={`/profile/${user.id}`} className="block rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:bg-white/10">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700">
+          {user.avatar ? <img src={user.avatar} alt="" className="h-full w-full object-cover" /> : <span className="text-lg font-semibold">{user.displayName?.[0]}</span>}
+        </div>
+        <div className="min-w-0"><p className="truncate text-sm font-semibold">{user.displayName}</p><p className="text-xs text-slate-400">{roleLabels[user.role] || 'کاربر'}</p></div>
+      </div>
+    </Link>
   );
 }
