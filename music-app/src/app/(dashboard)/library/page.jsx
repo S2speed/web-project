@@ -13,6 +13,8 @@ import {
   getUserPlaylists,
   removeSongFromPlaylist,
 } from '@/lib/mockApi';
+import { LIBRARY_SORT_OPTIONS } from '@/utils/constants';
+import { buildLibraryAlbums, filterAndSortAlbums, filterAndSortSingles, getArtistName } from '@/utils/library';
 
 function formatNumber(value) {
   return new Intl.NumberFormat('fa-IR').format(Number(value) || 0);
@@ -26,10 +28,6 @@ function CoverImage({ src, alt, className = '' }) {
   );
 }
 
-function artistName(artist) {
-  return artist?.stageName || artist?.user?.displayName || 'هنرمند';
-}
-
 export default function LibraryPage() {
   const { user, isLoading } = useUser();
   const { playSong } = usePlayer();
@@ -38,7 +36,7 @@ export default function LibraryPage() {
   const [artists, setArtists] = useState([]);
   const [playlists, setPlaylists] = useState([]);
   const [query, setQuery] = useState('');
-  const [sortBy, setSortBy] = useState('releaseDate');
+  const [sortBy, setSortBy] = useState(LIBRARY_SORT_OPTIONS.RELEASE_DATE);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
   const [openMenuSongId, setOpenMenuSongId] = useState(null);
   const [notice, setNotice] = useState('');
@@ -89,56 +87,9 @@ export default function LibraryPage() {
     loadLibrary();
   }, [user?.id]);
 
-  const artistMap = useMemo(() => {
-    const map = new Map();
-    artists.forEach((artist) => map.set(artist.id, artist));
-    return map;
-  }, [artists]);
-
-  const enrichedAlbums = useMemo(
-    () =>
-      albums.map((album) => {
-        const albumSongs = songs.filter((song) => song.albumId === album.id);
-        return {
-          ...album,
-          artist: artistMap.get(album.artistId),
-          songs: albumSongs,
-          listeners: albumSongs.reduce((sum, song) => sum + (Number(song.listeners) || 0), 0),
-        };
-      }),
-    [albums, artistMap, songs],
-  );
-
-  const normalizedQuery = query.trim().toLowerCase();
-
-  const filteredAlbums = useMemo(() => {
-    const result = enrichedAlbums.filter((album) => {
-      const haystack = [album.title, artistName(album.artist), album.genre].join(' ').toLowerCase();
-      return !normalizedQuery || haystack.includes(normalizedQuery);
-    });
-
-    return [...result].sort((left, right) => {
-      if (sortBy === 'listeners') {
-        return right.listeners - left.listeners;
-      }
-      return new Date(right.releaseDate || 0) - new Date(left.releaseDate || 0);
-    });
-  }, [enrichedAlbums, normalizedQuery, sortBy]);
-
-  const filteredSingles = useMemo(() => {
-    const result = songs.filter((song) => {
-      const single = song.isSingle || !song.albumId;
-      const haystack = [song.title, artistName(song.artist), song.album?.title, song.genre].join(' ').toLowerCase();
-      return single && (!normalizedQuery || haystack.includes(normalizedQuery));
-    });
-
-    return [...result].sort((left, right) => {
-      if (sortBy === 'listeners') {
-        return (Number(right.listeners) || 0) - (Number(left.listeners) || 0);
-      }
-      return new Date(right.releaseDate || 0) - new Date(left.releaseDate || 0);
-    });
-  }, [normalizedQuery, songs, sortBy]);
+  const enrichedAlbums = useMemo(() => buildLibraryAlbums(albums, songs, artists), [albums, artists, songs]);
+  const filteredAlbums = useMemo(() => filterAndSortAlbums(enrichedAlbums, query, sortBy), [enrichedAlbums, query, sortBy]);
+  const filteredSingles = useMemo(() => filterAndSortSingles(songs, query, sortBy), [query, songs, sortBy]);
 
   const selectedAlbum = selectedAlbumId ? enrichedAlbums.find((album) => album.id === selectedAlbumId) : null;
 
@@ -195,8 +146,8 @@ export default function LibraryPage() {
               onChange={(event) => setSortBy(event.target.value)}
               className="rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none focus:border-violet-300"
             >
-              <option value="releaseDate">جدیدترین انتشار</option>
-              <option value="listeners">بیشترین شنونده</option>
+              <option value={LIBRARY_SORT_OPTIONS.RELEASE_DATE}>جدیدترین انتشار</option>
+              <option value={LIBRARY_SORT_OPTIONS.LISTENERS}>بیشترین شنونده</option>
             </select>
           </div>
         </section>
@@ -212,7 +163,7 @@ export default function LibraryPage() {
                     <p className="text-sm text-violet-200">آهنگ‌های آلبوم</p>
                     <h2 className="text-2xl font-black">{selectedAlbum.title}</h2>
                     <Link href={`/artist/${selectedAlbum.artistId}`} className="mt-1 inline-block text-sm text-violet-100 hover:text-white">
-                      {artistName(selectedAlbum.artist)}
+                      {getArtistName(selectedAlbum.artist)}
                     </Link>
                   </div>
                   <button type="button" onClick={() => setSelectedAlbumId(null)} className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15">
@@ -246,7 +197,7 @@ export default function LibraryPage() {
                         <h3 className="truncate text-lg font-bold">{album.title}</h3>
                       </button>
                       <Link href={`/artist/${album.artistId}`} className="mt-1 inline-block truncate text-sm text-violet-200 hover:text-white">
-                        {artistName(album.artist)}
+                        {getArtistName(album.artist)}
                       </Link>
                       <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
                         <span>{album.releaseDate || 'بدون تاریخ'}</span>
@@ -297,7 +248,7 @@ function TrackRow({ song, playlists, openMenuSongId, setOpenMenuSongId, onPlay, 
         </button>
         <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-sm text-slate-400">
           <Link href={`/artist/${song.artistId}`} className="hover:text-white">
-            {artistName(song.artist)}
+            {getArtistName(song.artist)}
           </Link>
           {song.album && <span>• {song.album.title}</span>}
           <span>• {formatNumber(song.listeners)} شنونده</span>

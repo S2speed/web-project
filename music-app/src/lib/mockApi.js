@@ -5,6 +5,7 @@ import {
   NOTIFICATION_TYPES,
   DEFAULT_AVATAR,
   DEFAULT_COVER,
+  PLAYLIST_LIMITS,
 } from "@/utils/constants";
 import { seedLocalStorage } from "@/utils/seedData";
 
@@ -13,12 +14,6 @@ const EXTRA_STORAGE_KEYS = {
   SUBSCRIPTION_PRICES: "musicApp_subscriptionPrices",
   ARTIST_PAYMENTS: "musicApp_artistPayments",
   PASSWORD_RESETS: "musicApp_passwordResets",
-};
-
-const DEFAULT_PLAYLIST_LIMITS = {
-  [SUBSCRIPTIONS.FREE]: 6,
-  [SUBSCRIPTIONS.SILVER]: 100,
-  [SUBSCRIPTIONS.GOLD]: Infinity,
 };
 
 const DEFAULT_SUBSCRIPTION_PRICES = {
@@ -222,7 +217,7 @@ const removeFromArray = (items, value) => items.filter((item) => item !== value)
 const pushUnique = (items, value) => (items.includes(value) ? items : [...items, value]);
 
 const isAdminOrSupport = (user) => Boolean(user && [ROLES.ADMIN, ROLES.SUPPORT].includes(user.role));
-const getSubscriptionLimit = (subscription) => DEFAULT_PLAYLIST_LIMITS[subscription] ?? DEFAULT_PLAYLIST_LIMITS[SUBSCRIPTIONS.FREE];
+const getSubscriptionLimit = (subscription) => PLAYLIST_LIMITS[subscription] ?? PLAYLIST_LIMITS[SUBSCRIPTIONS.FREE];
 
 const resolveFileUrl = (file, fallback = null) => {
   if (file && typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {

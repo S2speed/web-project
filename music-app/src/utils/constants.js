@@ -28,6 +28,12 @@ export const SUBSCRIPTION_TYPES = {
   GOLD: "gold",
 };
 
+export const PLAYLIST_LIMITS = {
+  [SUBSCRIPTION_TYPES.FREE]: 6,
+  [SUBSCRIPTION_TYPES.SILVER]: 100,
+  [SUBSCRIPTION_TYPES.GOLD]: Infinity,
+};
+
 // Subscription-specific capabilities used across profile and playback features
 export const SUBSCRIPTION_LIMITS = {
   [SUBSCRIPTION_TYPES.FREE]: {
@@ -48,6 +54,23 @@ export const NOTIFICATION_TYPES = {
   VERIFICATION: "verification",
   FINANCIAL: "financial",
   TICKET: "ticket",
+};
+
+export const PLAYER_REPEAT_MODES = {
+  NONE: "none",
+  ALL: "all",
+  ONE: "one",
+};
+
+export const PLAYER_REPEAT_SEQUENCE = [
+  PLAYER_REPEAT_MODES.NONE,
+  PLAYER_REPEAT_MODES.ALL,
+  PLAYER_REPEAT_MODES.ONE,
+];
+
+export const LIBRARY_SORT_OPTIONS = {
+  RELEASE_DATE: "releaseDate",
+  LISTENERS: "listeners",
 };
 
 // Default images used when a user has no avatar/cover set

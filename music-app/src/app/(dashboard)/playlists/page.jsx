@@ -12,7 +12,7 @@ import {
   getUserPlaylists,
   renamePlaylist,
 } from '@/lib/mockApi';
-import { SUBSCRIPTION_TYPES as SUBSCRIPTIONS } from '@/utils/constants';
+import { PLAYLIST_LIMITS, SUBSCRIPTION_TYPES as SUBSCRIPTIONS } from '@/utils/constants';
 
 const subscriptionLabels = {
   [SUBSCRIPTIONS.FREE]: 'پایه',
@@ -256,8 +256,8 @@ export default function PlaylistsPage() {
           <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
             <h2 className="text-xl font-bold">محدودیت اشتراک‌ها</h2>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl bg-white/[0.04] p-4 text-sm text-slate-300">پایه: حداکثر ۶ پلی‌لیست</div>
-              <div className="rounded-2xl bg-white/[0.04] p-4 text-sm text-slate-300">نقره‌ای: حداکثر ۱۰۰ پلی‌لیست</div>
+              <div className="rounded-2xl bg-white/[0.04] p-4 text-sm text-slate-300">پایه: حداکثر {formatNumber(PLAYLIST_LIMITS[SUBSCRIPTIONS.FREE])} پلی‌لیست</div>
+              <div className="rounded-2xl bg-white/[0.04] p-4 text-sm text-slate-300">نقره‌ای: حداکثر {formatNumber(PLAYLIST_LIMITS[SUBSCRIPTIONS.SILVER])} پلی‌لیست</div>
               <div className="rounded-2xl bg-white/[0.04] p-4 text-sm text-slate-300">طلایی: نامحدود</div>
             </div>
           </div>

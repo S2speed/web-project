@@ -2,20 +2,21 @@
 
 import { createContext, useContext, useRef, useReducer } from 'react';
 import { incrementPlayCount } from '@/lib/mockApi';
+import { PLAYER_REPEAT_MODES, PLAYER_REPEAT_SEQUENCE } from '@/utils/constants';
 
-const initialState = {
+export const PLAYER_INITIAL_STATE = {
   currentSong: null,
   isPlaying: false,
   queue: [],
   currentIndex: 0,
   volume: 0.7,
-  repeatMode: 'none',
+  repeatMode: PLAYER_REPEAT_MODES.NONE,
   isShuffle: false,
   progress: 0,
   duration: 0,
 };
 
-function playerReducer(state, action) {
+export function playerReducer(state, action) {
   switch (action.type) {
     case 'PLAY_SONG':
       return {
@@ -36,7 +37,7 @@ function playerReducer(state, action) {
       const nextIndex = state.currentIndex + 1;
 
       if (nextIndex >= state.queue.length) {
-        if (state.repeatMode === 'all') {
+        if (state.repeatMode === PLAYER_REPEAT_MODES.ALL) {
           return { ...state, currentIndex: 0, currentSong: state.queue[0], isPlaying: true };
         }
 
@@ -69,9 +70,8 @@ function playerReducer(state, action) {
     case 'SET_VOLUME':
       return { ...state, volume: action.payload };
     case 'TOGGLE_REPEAT': {
-      const modes = ['none', 'all', 'one'];
-      const currentModeIndex = modes.indexOf(state.repeatMode);
-      const nextMode = modes[(currentModeIndex + 1) % modes.length];
+      const currentModeIndex = PLAYER_REPEAT_SEQUENCE.indexOf(state.repeatMode);
+      const nextMode = PLAYER_REPEAT_SEQUENCE[(currentModeIndex + 1) % PLAYER_REPEAT_SEQUENCE.length];
       return { ...state, repeatMode: nextMode };
     }
     case 'TOGGLE_SHUFFLE':
@@ -84,7 +84,7 @@ function playerReducer(state, action) {
 const PlayerContext = createContext(null);
 
 export function PlayerProvider({ children }) {
-  const [state, dispatch] = useReducer(playerReducer, initialState);
+  const [state, dispatch] = useReducer(playerReducer, PLAYER_INITIAL_STATE);
   const audioRef = useRef(null);
 
   const playSong = (song) => {
@@ -94,6 +94,10 @@ export function PlayerProvider({ children }) {
 
   const togglePlay = () => {
     dispatch({ type: 'TOGGLE_PLAY' });
+  };
+
+  const setQueue = (songs) => {
+    dispatch({ type: 'SET_QUEUE', payload: Array.isArray(songs) ? songs : [] });
   };
 
   const next = () => {
@@ -122,6 +126,7 @@ export function PlayerProvider({ children }) {
         ...state,
         audioRef,
         playSong,
+        setQueue,
         togglePlay,
         next,
         previous,
