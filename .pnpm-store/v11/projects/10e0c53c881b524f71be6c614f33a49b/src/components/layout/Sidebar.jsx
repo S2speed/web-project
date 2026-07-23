@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useUser } from '@/contexts/UserContext';
 import { DEFAULT_AVATAR, USER_ROLES as ROLES } from '@/utils/constants';
 
@@ -16,8 +16,10 @@ const mainMenu = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { user, isLoading } = useUser();
+  const router = useRouter();
+  const { user, isLoading, logout } = useUser();
   const [isOpen, setIsOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     setIsOpen(false);
@@ -36,25 +38,51 @@ export default function Sidebar() {
   const profileMenu = user ? [{ href: `/profile/${user.id}`, label: 'نمایه کاربری', icon: '👤' }] : [];
   const allMenu = [...mainMenu, ...profileMenu, ...roleMenu];
 
-  const navigation = (
-    <nav className="space-y-1" aria-label="منوی اصلی">
-      {allMenu.map((item) => {
-        const isActive = pathname === item.href;
+  const handleLogout = async () => {
+    if (isLoggingOut) {
+      return;
+    }
 
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
-              isActive ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <span aria-hidden="true">{item.icon}</span>
-            <span>{item.label}</span>
-          </Link>
-        );
-      })}
-    </nav>
+    setIsLoggingOut(true);
+    await logout();
+    setIsOpen(false);
+    router.replace('/login');
+    router.refresh();
+  };
+
+  const navigation = (
+    <>
+      <nav className="space-y-1" aria-label="منوی اصلی">
+        {allMenu.map((item) => {
+          const isActive = pathname === item.href;
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                isActive ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <span aria-hidden="true">{item.icon}</span>
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {user && (
+        <button
+          type="button"
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          className="mt-4 flex w-full items-center gap-3 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2.5 text-sm text-red-300 transition hover:bg-red-400/20 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <span aria-hidden="true">↪</span>
+          <span>{isLoggingOut ? 'در حال خروج...' : 'خروج از حساب'}</span>
+        </button>
+      )}
+    </>
   );
 
   return (

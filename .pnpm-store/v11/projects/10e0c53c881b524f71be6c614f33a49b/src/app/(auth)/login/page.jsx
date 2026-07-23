@@ -61,40 +61,39 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="-space-y-px overflow-hidden rounded-xl shadow-sm">
-            <div>
-              <label htmlFor="email" className="sr-only">
-                ایمیل
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                className="relative block w-full appearance-none rounded-none border border-white/10 bg-slate-900/80 px-4 py-3 text-white placeholder-slate-500 transition focus:z-10 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400 sm:text-sm"
-                placeholder="ایمیل"
-                value={formData.email}
-                onChange={handleChange}
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="sr-only">
-                رمز عبور
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                className="relative block w-full appearance-none rounded-none border border-white/10 bg-slate-900/80 px-4 py-3 text-white placeholder-slate-500 transition focus:z-10 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400 sm:text-sm"
-                placeholder="رمز عبور"
-                value={formData.password}
-                onChange={handleChange}
-              />
-            </div>
+        <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-slate-300">
+              ایمیل
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              className="mt-1 block w-full rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3 text-white shadow-sm placeholder-slate-500 transition focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400 sm:text-sm"
+              placeholder="example@email.com"
+              value={formData.email}
+              onChange={handleChange}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-slate-300">
+              رمز عبور
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              required
+              className="mt-1 block w-full rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3 text-white shadow-sm placeholder-slate-500 transition focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400 sm:text-sm"
+              placeholder="رمز عبور"
+              value={formData.password}
+              onChange={handleChange}
+            />
           </div>
 
           <div className="flex items-center justify-end">
