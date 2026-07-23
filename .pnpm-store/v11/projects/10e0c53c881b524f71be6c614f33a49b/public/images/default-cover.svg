@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">جلد پیش‌فرض موسیقی</title>
+  <desc id="description">نت موسیقی روی پس‌زمینه تیره و سبز</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset=".55" stop-color="#134e4a"/>
+      <stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#6ee7b7" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#6ee7b7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="64" fill="url(#background)"/>
+  <circle cx="390" cy="110" r="170" fill="url(#glow)"/>
+  <circle cx="150" cy="366" r="170" fill="url(#glow)"/>
+  <path d="M325 116v236c0 47-36 77-84 77-39 0-69-22-69-55 0-38 36-65 82-65 14 0 27 3 39 8V174l-137 29v184c0 47-36 77-84 77-39 0-69-22-69-55 0-38 36-65 82-65 14 0 27 3 39 8V161l201-45z" fill="#ecfdf5"/>
+</svg>
