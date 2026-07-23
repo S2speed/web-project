@@ -7,10 +7,10 @@ import { usePlayer } from '@/contexts/PlayerContext';
 import {
   getLatestAlbums,
   getNewReleases,
+  getRecentlyListenedPlaylists,
   getTrendingSongs,
-  getUserPlaylists,
 } from '@/lib/mockApi';
-import { SUBSCRIPTION_TYPES } from '@/utils/constants';
+import { DEFAULT_AVATAR, DEFAULT_COVER, SUBSCRIPTION_TYPES } from '@/utils/constants';
 
 const subscriptionLabels = {
   [SUBSCRIPTION_TYPES.FREE]: 'پایه',
@@ -35,11 +35,24 @@ function SectionHeader({ title, href, action }) {
   );
 }
 
-function CoverImage({ src, alt, className = '' }) {
+function CoverImage({ src, alt, className = '', fallbackSrc = DEFAULT_COVER }) {
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
+  const imageSrc = hasError ? fallbackSrc : src || fallbackSrc;
+
   return (
     <div className={`overflow-hidden bg-white/10 ${className}`}>
-      {src ? (
-        <img src={src} alt={alt} className="h-full w-full object-cover" />
+      {imageSrc ? (
+        <img
+          src={imageSrc}
+          alt={alt}
+          onError={() => setHasError(true)}
+          className="h-full w-full object-cover"
+        />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-2xl text-slate-500">♪</div>
       )}
@@ -65,7 +78,7 @@ export default function HomePage() {
       setIsDataLoading(true);
 
       const [playlistResult, albumResult, trendingResult, releaseResult] = await Promise.all([
-        user?.id ? getUserPlaylists(user.id) : Promise.resolve({ success: true, data: [] }),
+        user?.id ? getRecentlyListenedPlaylists(user.id, 4) : Promise.resolve({ success: true, data: [] }),
         getLatestAlbums(6),
         getTrendingSongs(6),
         getNewReleases(6),
@@ -116,7 +129,12 @@ export default function HomePage() {
       <section className="mb-8 overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-l from-emerald-500/25 via-slate-900 to-slate-950 p-5 shadow-2xl shadow-emerald-950/20 md:p-8">
         <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
-            <CoverImage src={user?.avatar} alt={displayName} className="h-20 w-20 rounded-full ring-2 ring-emerald-300/60 md:h-24 md:w-24" />
+            <CoverImage
+              src={user?.avatar}
+              alt={displayName}
+              fallbackSrc={DEFAULT_AVATAR}
+              className="h-20 w-20 rounded-full ring-2 ring-emerald-300/60 md:h-24 md:w-24"
+            />
             <div>
               <p className="text-sm text-emerald-200">خوش برگشتی</p>
               <h1 className="mt-1 text-3xl font-black md:text-4xl">{displayName}</h1>
@@ -177,7 +195,7 @@ export default function HomePage() {
             </div>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+          <section className={`grid gap-6 ${isGold ? 'xl:grid-cols-[1.4fr_1fr]' : ''}`}>
             <div>
               <SectionHeader title="آهنگ‌های پرشنونده" href="/library" />
               <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
@@ -192,7 +210,7 @@ export default function HomePage() {
                     <span className="hidden text-sm text-slate-400 sm:inline">{formatNumber(song.playCount)} پخش</span>
                     <button
                       type="button"
-                      onClick={() => playSong(song)}
+                      onClick={() => playSong(song, homeData.trendingSongs)}
                       className="rounded-full bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300"
                     >
                       پخش
@@ -202,28 +220,30 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-5">
-              <SectionHeader title="دسترسی زودهنگام طلایی" href="/settings" action={isGold ? 'مدیریت اشتراک' : 'ارتقا'} />
-              <p className="mb-4 text-sm leading-6 text-amber-100/85">
-                {isGold ? 'به عنوان کاربر طلایی، آثار جدید را زودتر از دیگران می‌بینید.' : 'این بخش برای نمایش مزیت کاربران طلایی در صفحه خانه آماده شده است.'}
-              </p>
-              <div className="space-y-3">
-                {earlyAccess.map((song) => (
-                  <button
-                    key={song.id}
-                    type="button"
-                    onClick={() => playSong(song)}
-                    className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-right transition hover:bg-white/10"
-                  >
-                    <CoverImage src={song.cover} alt={song.title} className="h-11 w-11 rounded-lg" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{song.title}</span>
-                      <span className="block truncate text-xs text-amber-100/70">انتشار جدید</span>
-                    </span>
-                  </button>
-                ))}
+            {isGold && (
+              <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-5">
+                <SectionHeader title="دسترسی زودهنگام طلایی" href="/settings" action="مدیریت اشتراک" />
+                <p className="mb-4 text-sm leading-6 text-amber-100/85">
+                  به عنوان کاربر طلایی، آثار جدید را زودتر از دیگران می‌بینید.
+                </p>
+                <div className="space-y-3">
+                  {earlyAccess.map((song) => (
+                    <button
+                      key={song.id}
+                      type="button"
+                      onClick={() => playSong(song, earlyAccess)}
+                      className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-right transition hover:bg-white/10"
+                    >
+                      <CoverImage src={song.cover} alt={song.title} className="h-11 w-11 rounded-lg" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{song.title}</span>
+                        <span className="block truncate text-xs text-amber-100/70">انتشار جدید</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </section>
         </div>
       )}

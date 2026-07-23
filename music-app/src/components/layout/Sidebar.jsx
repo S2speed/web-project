@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useUser } from '@/contexts/UserContext';
-import { USER_ROLES as ROLES } from '@/utils/constants';
+import { DEFAULT_AVATAR, USER_ROLES as ROLES } from '@/utils/constants';
 
 const mainMenu = [
   { href: '/', label: 'خانه', icon: '🏠' },
-  { href: '/library', label: 'کتابخانه', icon: '📚' },
+  { href: '/library', label: 'آلبوم‌ها و تک‌آهنگ‌ها', icon: '📚' },
   { href: '/playlists', label: 'پلی‌لیست‌ها', icon: '📋' },
   { href: '/notifications', label: 'اعلانات', icon: '🔔' },
   { href: '/settings', label: 'تنظیمات', icon: '⚙️' },
@@ -78,7 +78,16 @@ export default function Sidebar() {
           aria-label={user ? 'نمایه کاربری' : 'ورود'}
           className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-sm font-bold"
         >
-          {user?.avatar ? <img src={user.avatar} alt="" className="h-full w-full object-cover" /> : user?.displayName?.[0] || '○'}
+          {user ? (
+            <img
+              src={user.avatar || DEFAULT_AVATAR}
+              alt=""
+              onError={(event) => {
+                event.currentTarget.src = DEFAULT_AVATAR;
+              }}
+              className="h-full w-full object-cover"
+            />
+          ) : '○'}
         </Link>
       </header>
 
@@ -125,7 +134,14 @@ function UserCard({ user }) {
     <Link href={`/profile/${user.id}`} className="block rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:bg-white/10">
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700">
-          {user.avatar ? <img src={user.avatar} alt="" className="h-full w-full object-cover" /> : <span className="text-lg font-semibold">{user.displayName?.[0]}</span>}
+          <img
+            src={user.avatar || DEFAULT_AVATAR}
+            alt=""
+            onError={(event) => {
+              event.currentTarget.src = DEFAULT_AVATAR;
+            }}
+            className="h-full w-full object-cover"
+          />
         </div>
         <div className="min-w-0"><p className="truncate text-sm font-semibold">{user.displayName}</p><p className="text-xs text-slate-400">{roleLabels[user.role] || 'کاربر'}</p></div>
       </div>

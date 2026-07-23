@@ -6,6 +6,7 @@ import {
   DEFAULT_AVATAR,
   DEFAULT_COVER,
   PLAYLIST_LIMITS,
+  SUBSCRIPTION_LIMITS,
 } from "@/utils/constants";
 import { seedLocalStorage } from "@/utils/seedData";
 
@@ -14,6 +15,9 @@ const EXTRA_STORAGE_KEYS = {
   SUBSCRIPTION_PRICES: "musicApp_subscriptionPrices",
   ARTIST_PAYMENTS: "musicApp_artistPayments",
   PASSWORD_RESETS: "musicApp_passwordResets",
+  PLAY_HISTORY: "musicApp_playHistory",
+  STREAM_EVENTS: "musicApp_streamEvents",
+  SUBSCRIPTION_PAYMENTS: "musicApp_subscriptionPayments",
 };
 
 const DEFAULT_SUBSCRIPTION_PRICES = {
@@ -136,6 +140,12 @@ const getArtistPayments = () => readArray(EXTRA_STORAGE_KEYS.ARTIST_PAYMENTS);
 const saveArtistPayments = (payments) => writeArray(EXTRA_STORAGE_KEYS.ARTIST_PAYMENTS, payments);
 const getPasswordResets = () => readArray(EXTRA_STORAGE_KEYS.PASSWORD_RESETS);
 const savePasswordResets = (items) => writeArray(EXTRA_STORAGE_KEYS.PASSWORD_RESETS, items);
+const getPlayHistory = () => readArray(EXTRA_STORAGE_KEYS.PLAY_HISTORY);
+const savePlayHistory = (items) => writeArray(EXTRA_STORAGE_KEYS.PLAY_HISTORY, items);
+const getStreamEvents = () => readArray(EXTRA_STORAGE_KEYS.STREAM_EVENTS);
+const saveStreamEvents = (items) => writeArray(EXTRA_STORAGE_KEYS.STREAM_EVENTS, items);
+const getSubscriptionPayments = () => readArray(EXTRA_STORAGE_KEYS.SUBSCRIPTION_PAYMENTS);
+const saveSubscriptionPayments = (items) => writeArray(EXTRA_STORAGE_KEYS.SUBSCRIPTION_PAYMENTS, items);
 
 const getSubscriptionPrices = () => ({
   ...DEFAULT_SUBSCRIPTION_PRICES,
@@ -217,6 +227,7 @@ const removeFromArray = (items, value) => items.filter((item) => item !== value)
 const pushUnique = (items, value) => (items.includes(value) ? items : [...items, value]);
 
 const isAdminOrSupport = (user) => Boolean(user && [ROLES.ADMIN, ROLES.SUPPORT].includes(user.role));
+const isAdmin = (user) => Boolean(user && user.role === ROLES.ADMIN);
 const getSubscriptionLimit = (subscription) => PLAYLIST_LIMITS[subscription] ?? PLAYLIST_LIMITS[SUBSCRIPTIONS.FREE];
 
 const resolveFileUrl = (file, fallback = null) => {
@@ -227,11 +238,108 @@ const resolveFileUrl = (file, fallback = null) => {
   return fallback;
 };
 
+const SUPPORTED_AUDIO_EXTENSIONS = [".mp3", ".wav", ".flac"];
+const isSupportedAudioFile = (file) =>
+  Boolean(file?.name && SUPPORTED_AUDIO_EXTENSIONS.some((extension) => file.name.toLowerCase().endsWith(extension)));
+const canManageArtist = (user, artistProfile) =>
+  Boolean(
+    user
+    && user.role === ROLES.ARTIST
+    && artistProfile
+    && (artistProfile.userId === user.id || artistProfile.id === user.id),
+  );
+const isVerifiedArtist = (user, artistProfile) =>
+  Boolean(artistProfile?.verificationStatus === "approved" || user?.isVerified === true);
+
 const getSongByIdSync = (songId) => getSongs().find((song) => song.id === songId) || null;
 const getAlbumByIdSync = (albumId) => getAlbums().find((album) => album.id === albumId) || null;
 const getPlaylistByIdSync = (playlistId) => getPlaylists().find((playlist) => playlist.id === playlistId) || null;
 const getNotificationByIdSync = (notificationId) => getNotifications().find((notification) => notification.id === notificationId) || null;
 const getTicketByIdSync = (ticketId) => getTickets().find((ticket) => ticket.id === ticketId) || null;
+
+const buildTicketPayload = (ticket) => {
+  const owner = getUserByIdRecord(ticket.userId);
+  return {
+    ...ticket,
+    user: owner ? stripPassword(owner) : null,
+  };
+};
+
+const currentMonthKey = () => new Date().toISOString().slice(0, 7);
+
+const createNotificationSync = (userId, notificationData) => {
+  const user = getUserByIdRecord(userId);
+  const settings = user?.notificationSettings || {};
+  const notifications = getNotifications();
+
+  if (
+    notificationData.dedupeKey
+    && notifications.some((item) => item.dedupeKey === notificationData.dedupeKey)
+  ) {
+    return null;
+  }
+
+  if (settings.inApp === false) {
+    return null;
+  }
+
+  const configuredLimit = Number(settings.dailyLimit);
+  if (Number.isFinite(configuredLimit)) {
+    const dailyLimit = Math.max(0, configuredLimit);
+    const today = new Date().toISOString().slice(0, 10);
+    const createdToday = notifications.filter(
+      (item) => item.userId === userId && String(item.createdAt || "").startsWith(today),
+    ).length;
+
+    if (createdToday >= dailyLimit) {
+      return null;
+    }
+  }
+
+  const notification = {
+    id: generateId("notification"),
+    userId,
+    type: notificationData.type || NOTIFICATION_TYPES.NEW_RELEASE,
+    title: normalizeText(notificationData.title) || "اعلان جدید",
+    message: normalizeText(notificationData.message),
+    link: notificationData.link || null,
+    dedupeKey: notificationData.dedupeKey || null,
+    isRead: false,
+    createdAt: new Date().toISOString(),
+    readAt: null,
+  };
+  notifications.unshift(notification);
+  saveNotifications(notifications);
+  return notification;
+};
+
+const ensureSubscriptionExpiryNotification = (user) => {
+  if (!user?.subscriptionExpiresAt || user.subscription === SUBSCRIPTIONS.FREE) {
+    return;
+  }
+
+  const remainingMs = new Date(user.subscriptionExpiresAt).getTime() - Date.now();
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  if (remainingMs > sevenDays) {
+    return;
+  }
+
+  const dedupeKey = `subscription-expiry:${user.id}:${user.subscriptionExpiresAt}`;
+  if (getNotifications().some((item) => item.dedupeKey === dedupeKey)) {
+    return;
+  }
+
+  const expired = remainingMs <= 0;
+  createNotificationSync(user.id, {
+    type: NOTIFICATION_TYPES.SUBSCRIPTION,
+    title: expired ? "اشتراک شما پایان یافته است" : "اشتراک شما رو به پایان است",
+    message: expired
+      ? "برای ادامه استفاده از امکانات اشتراکی، طرح خود را تمدید کنید."
+      : `اشتراک شما تا ${new Intl.DateTimeFormat("fa-IR").format(new Date(user.subscriptionExpiresAt))} معتبر است.`,
+    link: "/settings#subscription",
+    dedupeKey,
+  });
+};
 
 const recalcArtistMonthlyListeners = (artistId) => {
   const artistProfile = getArtistProfileById(artistId);
@@ -265,7 +373,7 @@ const getArtistEntries = () => {
     entries.push({
       ...artistProfile,
       user: linkedUser ? stripPassword(linkedUser) : null,
-      songs: getSongs().filter((song) => song.artistId === artistProfile.id),
+      songs: getSongs().filter((song) => song.artistId === artistProfile.id).map(buildSongPayload),
       albums: getAlbums().filter((album) => album.artistId === artistProfile.id),
     });
   });
@@ -320,16 +428,25 @@ const getArtistStatsPayload = (artistId) => {
   const linkedUser = getArtistUserFromProfile(artistProfile);
   const totalStreams = artistSongs.reduce((total, song) => total + (Number(song.playCount) || 0), 0);
   const monthlyListeners = recalcArtistMonthlyListeners(artistProfile.id);
+  const monthlyEvents = getStreamEvents().filter(
+    (event) => event.artistId === artistProfile.id && event.month === currentMonthKey(),
+  );
+  const monthlyStreams =
+    monthlyEvents.length || artistSongs.reduce((total, song) => total + (Number(song.monthlyPlayCount) || 0), 0);
+  const monthlyUniqueListeners = new Set(monthlyEvents.map((event) => event.userId).filter(Boolean)).size;
 
   return {
     artistId: artistProfile.id,
     userId: artistProfile.userId || linkedUser?.id || null,
     followersCount: linkedUser?.followers?.length || 0,
     monthlyListeners,
+    monthlyUniqueListeners: monthlyUniqueListeners || monthlyListeners,
+    monthlyStreams,
     totalStreams,
     songsCount: artistSongs.length,
     albumsCount: artistAlbums.length,
     estimatedEarnings: Number((totalStreams * STREAM_VALUE * 0.7).toFixed(2)),
+    estimatedMonthlyEarnings: Number((monthlyStreams * STREAM_VALUE * 0.7).toFixed(2)),
     verified: artistProfile.verificationStatus === "approved" || linkedUser?.isVerified === true,
     updatedAt: new Date().toISOString(),
   };
@@ -467,6 +584,7 @@ export async function registerUser(userData) {
         email: true,
         push: true,
         inApp: true,
+        dailyLimit: 10,
         ...(userData.notificationSettings || {}),
       },
       createdAt: new Date().toISOString(),
@@ -519,6 +637,7 @@ export async function registerArtist(artistData) {
         email: true,
         push: true,
         inApp: true,
+        dailyLimit: 10,
         ...(artistData.notificationSettings || {}),
       },
       createdAt: new Date().toISOString(),
@@ -528,12 +647,32 @@ export async function registerArtist(artistData) {
     users.push(newUser);
     saveUsers(users);
 
-    ensureArtistProfileForUser(newUser, {
+    const artistProfile = ensureArtistProfileForUser(newUser, {
       stageName: normalizeText(artistData.stageName) || newUser.displayName,
       genres: Array.isArray(artistData.genres) ? artistData.genres : [],
       cover: artistData.cover || newUser.avatar || DEFAULT_COVER,
+      portfolio: artistData.portfolioFile
+        ? {
+            name: artistData.portfolioFile.name || "نمونه کار",
+            type: artistData.portfolioFile.type || "",
+            size: Number(artistData.portfolioFile.size) || 0,
+            url: resolveFileUrl(artistData.portfolioFile),
+          }
+        : null,
       verificationStatus: "pending",
     });
+
+    const supportUsers = users.filter((item) => item.role === ROLES.SUPPORT || item.role === ROLES.ADMIN);
+    await Promise.all(
+      supportUsers.map((supportUser) =>
+        createNotification(supportUser.id, {
+          type: NOTIFICATION_TYPES.VERIFICATION,
+          title: "درخواست احراز هویت هنرمند",
+          message: `${artistProfile.stageName} یک درخواست هنرمندی جدید ثبت کرده است.`,
+          link: "/admin/dashboard",
+        }),
+      ),
+    );
 
     return successResponse({
       ...stripPassword(newUser),
@@ -656,6 +795,13 @@ export async function updateUser(userId, updates) {
     delete nextUpdates.createdAt;
     delete nextUpdates.role;
 
+    if (
+      Object.prototype.hasOwnProperty.call(nextUpdates, "avatar")
+      && !SUBSCRIPTION_LIMITS[users[userIndex].subscription]?.canUploadAvatar
+    ) {
+      return errorResponse("کاربران اشتراک پایه امکان تغییر عکس پروفایل را ندارند", 403);
+    }
+
     if (nextUpdates.email) {
       const normalizedEmail = normalizeEmail(nextUpdates.email);
       if (users.some((user, index) => index !== userIndex && normalizeEmail(user.email) === normalizedEmail)) {
@@ -683,6 +829,55 @@ export async function updateUser(userId, updates) {
   }
 }
 
+export async function deleteAccount(userId) {
+  await delay();
+
+  try {
+    const currentUser = getCurrentUserRecord();
+
+    if (!currentUser || currentUser.id !== userId) {
+      return errorResponse("دسترسی غیرمجاز", 403);
+    }
+
+    const users = getUsers();
+    const user = users.find((item) => item.id === userId);
+
+    if (!user) {
+      return errorResponse("کاربر پیدا نشد", 404);
+    }
+
+    saveUsers(
+      users
+        .filter((item) => item.id !== userId)
+        .map((item) => ({
+          ...item,
+          followers: removeFromArray(item.followers || [], userId),
+          following: removeFromArray(item.following || [], userId),
+        })),
+    );
+
+    saveArtists(
+      getArtists().map((artist) => ({
+        ...artist,
+        userId: artist.userId === userId ? null : artist.userId,
+        followers: removeFromArray(artist.followers || [], userId),
+      })),
+    );
+    savePlaylists(getPlaylists().filter((playlist) => playlist.userId !== userId));
+    saveNotifications(getNotifications().filter((notification) => notification.userId !== userId));
+    saveTickets(getTickets().filter((ticket) => ticket.userId !== userId));
+    savePasswordResets(getPasswordResets().filter((reset) => reset.email !== normalizeEmail(user.email)));
+    savePlayHistory(getPlayHistory().filter((entry) => entry.userId !== userId));
+    saveStreamEvents(getStreamEvents().filter((entry) => entry.userId !== userId));
+    saveSubscriptionPayments(getSubscriptionPayments().filter((payment) => payment.userId !== userId));
+    removeValue(STORAGE_KEYS.CURRENT_USER);
+
+    return successResponse({ message: "حساب کاربری با موفقیت حذف شد" });
+  } catch (error) {
+    return errorResponse("خطا در حذف حساب کاربری", 500);
+  }
+}
+
 export async function followUser(currentUserId, targetUserId) {
   await delay();
 
@@ -692,24 +887,34 @@ export async function followUser(currentUserId, targetUserId) {
     }
 
     const users = getUsers();
+    const artists = getArtists();
     const currentUserIndex = users.findIndex((user) => user.id === currentUserId);
     const targetUserIndex = users.findIndex((user) => user.id === targetUserId);
+    const targetArtistIndex = targetUserIndex === -1
+      ? artists.findIndex((artist) => artist.id === targetUserId)
+      : -1;
 
-    if (currentUserIndex === -1 || targetUserIndex === -1) {
+    if (currentUserIndex === -1 || (targetUserIndex === -1 && targetArtistIndex === -1)) {
       return errorResponse("کاربر پیدا نشد", 404);
     }
 
     const currentUser = users[currentUserIndex];
-    const targetUser = users[targetUserIndex];
 
     if ((currentUser.following || []).includes(targetUserId)) {
       return errorResponse("از قبل این کاربر را دنبال می‌کنید", 400);
     }
 
     currentUser.following = pushUnique(currentUser.following || [], targetUserId);
-    targetUser.followers = pushUnique(targetUser.followers || [], currentUserId);
     currentUser.updatedAt = new Date().toISOString();
-    targetUser.updatedAt = new Date().toISOString();
+
+    if (targetUserIndex !== -1) {
+      users[targetUserIndex].followers = pushUnique(users[targetUserIndex].followers || [], currentUserId);
+      users[targetUserIndex].updatedAt = new Date().toISOString();
+    } else {
+      artists[targetArtistIndex].followers = pushUnique(artists[targetArtistIndex].followers || [], currentUserId);
+      artists[targetArtistIndex].updatedAt = new Date().toISOString();
+      saveArtists(artists);
+    }
 
     saveUsers(users);
 
@@ -731,20 +936,30 @@ export async function unfollowUser(currentUserId, targetUserId) {
 
   try {
     const users = getUsers();
+    const artists = getArtists();
     const currentUserIndex = users.findIndex((user) => user.id === currentUserId);
     const targetUserIndex = users.findIndex((user) => user.id === targetUserId);
+    const targetArtistIndex = targetUserIndex === -1
+      ? artists.findIndex((artist) => artist.id === targetUserId)
+      : -1;
 
-    if (currentUserIndex === -1 || targetUserIndex === -1) {
+    if (currentUserIndex === -1 || (targetUserIndex === -1 && targetArtistIndex === -1)) {
       return errorResponse("کاربر پیدا نشد", 404);
     }
 
     const currentUser = users[currentUserIndex];
-    const targetUser = users[targetUserIndex];
 
     currentUser.following = removeFromArray(currentUser.following || [], targetUserId);
-    targetUser.followers = removeFromArray(targetUser.followers || [], currentUserId);
     currentUser.updatedAt = new Date().toISOString();
-    targetUser.updatedAt = new Date().toISOString();
+
+    if (targetUserIndex !== -1) {
+      users[targetUserIndex].followers = removeFromArray(users[targetUserIndex].followers || [], currentUserId);
+      users[targetUserIndex].updatedAt = new Date().toISOString();
+    } else {
+      artists[targetArtistIndex].followers = removeFromArray(artists[targetArtistIndex].followers || [], currentUserId);
+      artists[targetArtistIndex].updatedAt = new Date().toISOString();
+      saveArtists(artists);
+    }
 
     saveUsers(users);
 
@@ -765,6 +980,16 @@ export async function uploadAvatar(userId, file) {
   await delay();
 
   try {
+    const user = getUserByIdRecord(userId);
+
+    if (!user) {
+      return errorResponse("کاربر پیدا نشد", 404);
+    }
+
+    if (!SUBSCRIPTION_LIMITS[user.subscription]?.canUploadAvatar) {
+      return errorResponse("کاربران اشتراک پایه امکان تغییر عکس پروفایل را ندارند", 403);
+    }
+
     const avatarUrl = resolveFileUrl(file, `mock-avatar-${generateId("avatar")}`);
     return updateUser(userId, {
       avatar: avatarUrl || DEFAULT_AVATAR,
@@ -793,7 +1018,7 @@ export async function getArtistById(artistId) {
     return successResponse({
       ...artistProfile,
       user: linkedUser ? stripPassword(linkedUser) : null,
-      songs: getSongs().filter((song) => song.artistId === artistProfile.id),
+      songs: getSongs().filter((song) => song.artistId === artistProfile.id).map(buildSongPayload),
       albums: getAlbums().filter((album) => album.artistId === artistProfile.id),
       stats: getArtistStatsPayload(artistProfile.id),
     });
@@ -822,7 +1047,7 @@ export async function getPendingArtists() {
       return errorResponse("دسترسی غیرمجاز", 403);
     }
 
-    const pendingArtists = getArtistEntries().filter((artist) => artist.verificationStatus !== "approved");
+    const pendingArtists = getArtistEntries().filter((artist) => artist.verificationStatus === "pending");
     return successResponse(pendingArtists);
   } catch (error) {
     return errorResponse("خطا در دریافت هنرمندان در انتظار تأیید", 500);
@@ -837,6 +1062,12 @@ export async function verifyArtist(artistId, status, reason = "") {
 
     if (!isAdminOrSupport(currentUser)) {
       return errorResponse("دسترسی غیرمجاز", 403);
+    }
+    if (!["approved", "rejected"].includes(status)) {
+      return errorResponse("وضعیت درخواست معتبر نیست", 400);
+    }
+    if (status === "rejected" && !normalizeText(reason)) {
+      return errorResponse("ذکر دلیل رد درخواست الزامی است", 400);
     }
 
     const users = getUsers();
@@ -1038,11 +1269,29 @@ export async function incrementPlayCount(songId) {
     songs[songIndex] = {
       ...songs[songIndex],
       playCount: (Number(songs[songIndex].playCount) || 0) + 1,
+      monthlyPlayCount: (Number(songs[songIndex].monthlyPlayCount) || 0) + 1,
       listeners: Math.max(Number(songs[songIndex].listeners) || 0, 1),
       updatedAt: new Date().toISOString(),
     };
 
     saveSongs(songs);
+
+    const currentUser = getCurrentUserRecord();
+    const playedAt = new Date().toISOString();
+    const history = getPlayHistory();
+    history.unshift({ id: generateId("play"), userId: currentUser?.id || null, songId, playedAt });
+    savePlayHistory(history.slice(0, 500));
+
+    const streamEvents = getStreamEvents();
+    streamEvents.push({
+      id: generateId("stream"),
+      userId: currentUser?.id || null,
+      artistId: songs[songIndex].artistId,
+      songId,
+      playedAt,
+      month: playedAt.slice(0, 7),
+    });
+    saveStreamEvents(streamEvents.slice(-5000));
 
     const artistProfile = getArtistProfileById(songs[songIndex].artistId);
     if (artistProfile) {
@@ -1076,6 +1325,28 @@ export async function incrementPlayCount(songId) {
 
 export async function getTrendingSongs(limit = 10) {
   return getAllSongs({ sortBy: "playCount", limit });
+}
+
+export async function getRecentlyListenedPlaylists(userId, limit = 4) {
+  await delay(100, 220);
+
+  try {
+    const history = getPlayHistory().filter((item) => item.userId === userId);
+    const rank = new Map(history.map((item, index) => [item.songId, index]));
+    const playlists = getPlaylists()
+      .filter((playlist) => playlist.userId === userId)
+      .map((playlist) => {
+        const ranks = (playlist.songIds || []).filter((id) => rank.has(id)).map((id) => rank.get(id));
+        return { playlist, rank: ranks.length ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER };
+      })
+      .sort((left, right) => left.rank - right.rank)
+      .map(({ playlist }) => playlist)
+      .slice(0, limit);
+
+    return successResponse(playlists);
+  } catch (error) {
+    return errorResponse("خطا در دریافت پلی‌لیست‌های اخیر", 500);
+  }
 }
 
 export async function getNewReleases(limit = 10) {
@@ -1164,6 +1435,12 @@ export async function createAlbum(albumData, coverFile) {
     if (!artistProfile) {
       return errorResponse("هنرمند پیدا نشد", 404);
     }
+    if (!canManageArtist(currentUser, artistProfile)) {
+      return errorResponse("شما اجازه مدیریت آثار این هنرمند را ندارید", 403);
+    }
+    if (!isVerifiedArtist(currentUser, artistProfile)) {
+      return errorResponse("انتشار اثر فقط پس از تأیید حساب هنرمند امکان‌پذیر است", 403);
+    }
 
     const albums = getAlbums();
     const nextAlbum = {
@@ -1194,7 +1471,7 @@ export async function createAlbum(albumData, coverFile) {
   }
 }
 
-export async function updateAlbum(albumId, updates) {
+export async function updateAlbum(albumId, updates, coverFile = null) {
   await delay();
 
   try {
@@ -1205,9 +1482,18 @@ export async function updateAlbum(albumId, updates) {
       return errorResponse("آلبوم پیدا نشد", 404);
     }
 
+    const currentUser = getCurrentUserRecord();
+    const artistProfile = getArtistProfileById(albums[albumIndex].artistId);
+    if (!canManageArtist(currentUser, artistProfile) || !isVerifiedArtist(currentUser, artistProfile)) {
+      return errorResponse("شما اجازه ویرایش این آلبوم را ندارید", 403);
+    }
+
     const nextUpdates = { ...updates };
     delete nextUpdates.id;
     delete nextUpdates.artistId;
+    if (coverFile) {
+      nextUpdates.cover = resolveFileUrl(coverFile, albums[albumIndex].cover || DEFAULT_COVER);
+    }
 
     albums[albumIndex] = {
       ...albums[albumIndex],
@@ -1233,8 +1519,17 @@ export async function deleteAlbum(albumId) {
       return errorResponse("آلبوم پیدا نشد", 404);
     }
 
+    const currentUser = getCurrentUserRecord();
+    const artistProfile = getArtistProfileById(album.artistId);
+    if (!canManageArtist(currentUser, artistProfile) || !isVerifiedArtist(currentUser, artistProfile)) {
+      return errorResponse("شما اجازه حذف این آلبوم را ندارید", 403);
+    }
+
     saveAlbums(albums.filter((item) => item.id !== albumId));
 
+    const convertedSongIds = getSongs()
+      .filter((song) => song.albumId === albumId)
+      .map((song) => song.id);
     const songs = getSongs().map((song) =>
       song.albumId === albumId
         ? {
@@ -1247,11 +1542,14 @@ export async function deleteAlbum(albumId) {
     );
     saveSongs(songs);
 
-    const artistProfile = getArtistProfileById(album.artistId);
     if (artistProfile) {
       upsertArtistProfile({
         ...artistProfile,
         albumIds: removeFromArray(artistProfile.albumIds || [], albumId),
+        singleIds: convertedSongIds.reduce(
+          (singleIds, songId) => pushUnique(singleIds, songId),
+          artistProfile.singleIds || [],
+        ),
         updatedAt: new Date().toISOString(),
       });
     }
@@ -1482,6 +1780,17 @@ export async function getUserNotifications(userId) {
   await delay();
 
   try {
+    const user = getUserByIdRecord(userId);
+
+    if (!user) {
+      return errorResponse("کاربر پیدا نشد", 404);
+    }
+
+    if (user.notificationSettings?.inApp === false) {
+      return successResponse([]);
+    }
+
+    ensureSubscriptionExpiryNotification(user);
     const notifications = getNotifications()
       .filter((notification) => notification.userId === userId)
       .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
@@ -1562,22 +1871,7 @@ export async function createNotification(userId, notificationData) {
   await delay(100, 220);
 
   try {
-    const notification = {
-      id: generateId("notif"),
-      userId,
-      type: notificationData?.type || NOTIFICATION_TYPES.NEW_RELEASE,
-      title: normalizeText(notificationData?.title) || "اعلان جدید",
-      message: normalizeText(notificationData?.message) || "",
-      isRead: false,
-      link: notificationData?.link || "/",
-      createdAt: new Date().toISOString(),
-    };
-
-    const notifications = getNotifications();
-    notifications.push(notification);
-    saveNotifications(notifications);
-
-    return successResponse(notification);
+    return successResponse(createNotificationSync(userId, notificationData || {}));
   } catch (error) {
     return errorResponse("خطا در ایجاد اعلان", 500);
   }
@@ -1597,7 +1891,7 @@ export async function getAllTickets() {
       return errorResponse("دسترسی غیرمجاز", 403);
     }
 
-    return successResponse(getTickets());
+    return successResponse(getTickets().map(buildTicketPayload));
   } catch (error) {
     return errorResponse("خطا در دریافت تیکت‌ها", 500);
   }
@@ -1609,19 +1903,38 @@ export async function getTicketById(ticketId) {
   try {
     const currentUser = getCurrentUserRecord();
 
-    if (!isAdminOrSupport(currentUser)) {
-      return errorResponse("دسترسی غیرمجاز", 403);
-    }
-
     const ticket = getTicketByIdSync(ticketId);
 
     if (!ticket) {
       return errorResponse("تیکت پیدا نشد", 404);
     }
+    if (!currentUser || (ticket.userId !== currentUser.id && !isAdminOrSupport(currentUser))) {
+      return errorResponse("دسترسی غیرمجاز", 403);
+    }
 
-    return successResponse(ticket);
+    return successResponse(buildTicketPayload(ticket));
   } catch (error) {
     return errorResponse("خطا در دریافت تیکت", 500);
+  }
+}
+
+export async function getUserTickets(userId) {
+  await delay();
+
+  try {
+    const currentUser = getCurrentUserRecord();
+    if (!currentUser || (currentUser.id !== userId && !isAdminOrSupport(currentUser))) {
+      return errorResponse("دسترسی غیرمجاز", 403);
+    }
+
+    return successResponse(
+      getTickets()
+        .filter((ticket) => ticket.userId === userId)
+        .sort((left, right) => new Date(right.updatedAt || 0) - new Date(left.updatedAt || 0))
+        .map(buildTicketPayload),
+    );
+  } catch (error) {
+    return errorResponse("خطا در دریافت تیکت‌های کاربر", 500);
   }
 }
 
@@ -1629,9 +1942,20 @@ export async function createTicket(userId, subject, message) {
   await delay();
 
   try {
+    const currentUser = getCurrentUserRecord();
+    if (!currentUser) {
+      return errorResponse("برای ثبت تیکت ابتدا وارد حساب شوید", 401);
+    }
+    if (currentUser.id !== userId && !isAdminOrSupport(currentUser)) {
+      return errorResponse("امکان ثبت تیکت برای کاربر دیگر وجود ندارد", 403);
+    }
+
     const user = getUserByIdRecord(userId);
     if (!user) {
       return errorResponse("کاربر پیدا نشد", 404);
+    }
+    if (!normalizeText(subject) || !normalizeText(message)) {
+      return errorResponse("موضوع و متن تیکت الزامی است", 400);
     }
 
     const ticket = {
@@ -1682,6 +2006,9 @@ export async function replyToTicket(ticketId, reply) {
     if (ticketIndex === -1) {
       return errorResponse("تیکت پیدا نشد", 404);
     }
+    if (!normalizeText(reply)) {
+      return errorResponse("متن پاسخ نمی‌تواند خالی باشد", 400);
+    }
 
     const replyItem = {
       id: generateId("reply"),
@@ -1694,7 +2021,7 @@ export async function replyToTicket(ticketId, reply) {
     tickets[ticketIndex] = {
       ...tickets[ticketIndex],
       replies: [...(tickets[ticketIndex].replies || []), replyItem],
-      status: "open",
+      status: "answered",
       updatedAt: new Date().toISOString(),
     };
     saveTickets(tickets);
@@ -1703,7 +2030,7 @@ export async function replyToTicket(ticketId, reply) {
       type: NOTIFICATION_TYPES.TICKET,
       title: "پاسخ به تیکت",
       message: replyItem.message || "یک پاسخ جدید برای تیکت شما ثبت شد.",
-      link: "/dashboard/notifications",
+      link: "/notifications",
     });
 
     return successResponse(tickets[ticketIndex]);
@@ -1747,33 +2074,64 @@ export async function getMonthlyFinancialReport() {
   await delay();
 
   try {
+    const currentUser = getCurrentUserRecord();
+    if (!isAdmin(currentUser)) {
+      return errorResponse("دسترسی گزارش مالی فقط برای مدیر سامانه مجاز است", 403);
+    }
+
     const songs = getSongs();
-    const users = getUsers();
-    const prices = getSubscriptionPrices();
-    const totalStreams = songs.reduce((total, song) => total + (Number(song.playCount) || 0), 0);
+    const month = currentMonthKey();
+    const events = getStreamEvents().filter((event) => event.month === month);
+    const totalStreams = events.length || songs.reduce((total, song) => total + (Number(song.monthlyPlayCount) || 0), 0);
     const streamRevenue = Number((totalStreams * STREAM_VALUE).toFixed(2));
-    const subscriptionRevenue = users.reduce((total, user) => {
-      if (user.subscription === SUBSCRIPTIONS.SILVER) {
-        return total + Number(prices.silver || 0);
-      }
-
-      if (user.subscription === SUBSCRIPTIONS.GOLD) {
-        return total + Number(prices.gold || 0);
-      }
-
-      return total;
-    }, 0);
+    const subscriptionPayments = getSubscriptionPayments().filter(
+      (payment) => payment.month === month && payment.status === "paid",
+    );
+    const subscriptionRevenue = Number(
+      subscriptionPayments.reduce((total, payment) => total + Number(payment.amount || 0), 0).toFixed(2),
+    );
+    const subscriptionRevenueByPlan = {
+      silver: Number(
+        subscriptionPayments
+          .filter((payment) => payment.plan === SUBSCRIPTIONS.SILVER)
+          .reduce((total, payment) => total + Number(payment.amount || 0), 0)
+          .toFixed(2),
+      ),
+      gold: Number(
+        subscriptionPayments
+          .filter((payment) => payment.plan === SUBSCRIPTIONS.GOLD)
+          .reduce((total, payment) => total + Number(payment.amount || 0), 0)
+          .toFixed(2),
+      ),
+    };
     const artistPayouts = Number((streamRevenue * 0.7).toFixed(2));
     const platformRevenue = Number((streamRevenue + subscriptionRevenue - artistPayouts).toFixed(2));
 
+    getArtists()
+      .filter((artist) => artist.userId)
+      .forEach((artist) => {
+        const stats = getArtistStatsPayload(artist.id);
+        const amount = Number(stats?.estimatedMonthlyEarnings || 0);
+
+        createNotificationSync(artist.userId, {
+          type: NOTIFICATION_TYPES.FINANCIAL,
+          title: "محاسبات مالی ماهانه آماده شد",
+          message: `گزارش ماه ${month} آماده است. درآمد تخمینی شما ${amount.toLocaleString("fa-IR")} است.`,
+          link: "/artist/dashboard",
+          dedupeKey: `financial-report:${month}:${artist.id}`,
+        });
+      });
+
     return successResponse({
-      month: new Date().toISOString().slice(0, 7),
+      month,
       totalStreams,
       streamRevenue,
       subscriptionRevenue,
+      subscriptionSalesCount: subscriptionPayments.length,
+      subscriptionRevenueByPlan,
       artistPayouts,
       platformRevenue,
-      settledPayments: getArtistPayments(),
+      settledPayments: getArtistPayments().filter((payment) => payment.month === month),
       generatedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -1785,13 +2143,27 @@ export async function settleArtistPayment(artistId) {
   await delay();
 
   try {
+    const currentUser = getCurrentUserRecord();
+    if (!isAdmin(currentUser)) {
+      return errorResponse("تسویه حساب فقط توسط مدیر سامانه انجام می‌شود", 403);
+    }
+
     const artistProfile = getArtistProfileById(artistId);
     if (!artistProfile) {
       return errorResponse("هنرمند پیدا نشد", 404);
     }
 
+    const month = currentMonthKey();
+    const payments = getArtistPayments();
+    const existingPayment = payments.find(
+      (payment) => payment.artistId === artistProfile.id && payment.month === month && payment.status === "settled",
+    );
+    if (existingPayment) {
+      return errorResponse("تسویه این هنرمند برای ماه جاری قبلاً ثبت شده است", 409);
+    }
+
     const stats = getArtistStatsPayload(artistProfile.id);
-    const amount = Number((stats.estimatedEarnings || 0).toFixed(2));
+    const amount = Number((stats.estimatedMonthlyEarnings || 0).toFixed(2));
 
     const payment = {
       id: generateId("payment"),
@@ -1799,11 +2171,11 @@ export async function settleArtistPayment(artistId) {
       userId: artistProfile.userId || null,
       amount,
       status: "settled",
+      month,
       settledAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
     };
 
-    const payments = getArtistPayments();
     payments.push(payment);
     saveArtistPayments(payments);
 
@@ -1826,9 +2198,20 @@ export async function updateSubscriptionPrices(silverPrice, goldPrice) {
   await delay();
 
   try {
+    const currentUser = getCurrentUserRecord();
+    if (!isAdmin(currentUser)) {
+      return errorResponse("تغییر قیمت فقط برای مدیر سامانه مجاز است", 403);
+    }
+
+    const silver = Number(silverPrice);
+    const gold = Number(goldPrice);
+    if (!Number.isFinite(silver) || !Number.isFinite(gold) || silver <= 0 || gold <= 0) {
+      return errorResponse("قیمت اشتراک‌ها باید عددی مثبت باشد", 400);
+    }
+
     const nextPrices = {
-      silver: Number(silverPrice),
-      gold: Number(goldPrice),
+      silver,
+      gold,
       updatedAt: new Date().toISOString(),
     };
 
@@ -1843,6 +2226,11 @@ export async function getSystemStats() {
   await delay();
 
   try {
+    const currentUser = getCurrentUserRecord();
+    if (!isAdmin(currentUser)) {
+      return errorResponse("دسترسی آمار سامانه فقط برای مدیر مجاز است", 403);
+    }
+
     const users = getUsers();
     const songs = getSongs();
     const albums = getAlbums();
@@ -1874,6 +2262,66 @@ export async function getSystemStats() {
   }
 }
 
+export async function getSubscriptionPricing() {
+  await delay(100, 220);
+  return successResponse(getSubscriptionPrices());
+}
+
+export async function purchaseSubscription(userId, plan, paymentData = {}) {
+  await delay();
+
+  try {
+    const currentUser = getCurrentUserRecord();
+    if (!currentUser || currentUser.id !== userId) {
+      return errorResponse("برای تغییر اشتراک وارد حساب خود شوید", 403);
+    }
+    if (![SUBSCRIPTIONS.FREE, SUBSCRIPTIONS.SILVER, SUBSCRIPTIONS.GOLD].includes(plan)) {
+      return errorResponse("طرح اشتراک معتبر نیست", 400);
+    }
+
+    const prices = getSubscriptionPrices();
+    const amount = plan === SUBSCRIPTIONS.FREE ? 0 : Number(prices[plan] || 0);
+    const paidAt = new Date().toISOString();
+    const expiresAt =
+      plan === SUBSCRIPTIONS.FREE
+        ? null
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const payment = {
+      id: generateId("subscription_payment"),
+      userId,
+      plan,
+      amount,
+      status: "paid",
+      cardLast4: normalizeText(paymentData.cardNumber).replace(/\D/g, "").slice(-4) || "0000",
+      paidAt,
+      month: paidAt.slice(0, 7),
+    };
+    const payments = getSubscriptionPayments();
+    payments.push(payment);
+    saveSubscriptionPayments(payments);
+
+    const result = await updateUser(userId, {
+      subscription: plan,
+      subscriptionStartedAt: paidAt,
+      subscriptionExpiresAt: expiresAt,
+    });
+    if (!result.success) {
+      return result;
+    }
+
+    createNotificationSync(userId, {
+      type: NOTIFICATION_TYPES.SUBSCRIPTION,
+      title: "اشتراک با موفقیت تغییر کرد",
+      message: `طرح ${plan === SUBSCRIPTIONS.GOLD ? "طلایی" : plan === SUBSCRIPTIONS.SILVER ? "نقره‌ای" : "پایه"} فعال شد.`,
+      link: "/settings#subscription",
+    });
+
+    return successResponse({ payment, user: result.data });
+  } catch (error) {
+    return errorResponse("خطا در ثبت پرداخت اشتراک", 500);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Artists Content
 // ---------------------------------------------------------------------------
@@ -1893,6 +2341,25 @@ export async function uploadSong(songData, audioFile, coverFile) {
     if (!artistProfile) {
       return errorResponse("هنرمند پیدا نشد", 404);
     }
+    if (!canManageArtist(currentUser, artistProfile)) {
+      return errorResponse("شما اجازه مدیریت آثار این هنرمند را ندارید", 403);
+    }
+    if (!isVerifiedArtist(currentUser, artistProfile)) {
+      return errorResponse("انتشار اثر فقط پس از تأیید حساب هنرمند امکان‌پذیر است", 403);
+    }
+    if (!audioFile) {
+      return errorResponse("انتخاب فایل صوتی الزامی است", 400);
+    }
+    if (!isSupportedAudioFile(audioFile)) {
+      return errorResponse("فرمت فایل صوتی باید MP3، WAV یا FLAC باشد", 400);
+    }
+
+    if (songData?.albumId) {
+      const targetAlbum = getAlbumByIdSync(songData.albumId);
+      if (!targetAlbum || targetAlbum.artistId !== artistId) {
+        return errorResponse("آلبوم انتخاب‌شده معتبر نیست", 400);
+      }
+    }
 
     const songs = getSongs();
     const song = {
@@ -1907,9 +2374,15 @@ export async function uploadSong(songData, audioFile, coverFile) {
       genre: songData?.genre || "",
       releaseDate: songData?.releaseDate || new Date().toISOString().slice(0, 10),
       playCount: 0,
+      monthlyPlayCount: 0,
       listeners: 0,
       isSingle: songData?.albumId ? false : true,
-      featuredArtists: Array.isArray(songData?.featuredArtists) ? songData.featuredArtists : [],
+      featuredArtists: Array.isArray(songData?.featuredArtists)
+        ? songData.featuredArtists
+        : normalizeText(songData?.featuredArtists)
+          .split("،")
+          .map((item) => item.trim())
+          .filter(Boolean),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1936,13 +2409,28 @@ export async function uploadSong(songData, audioFile, coverFile) {
       });
     }
 
-    return successResponse(song);
+    const artistUser = getArtistUserFromProfile(artistProfile);
+    const followers = artistUser?.followers || artistProfile.followers || [];
+    await Promise.all(
+      followers.map((userId) =>
+        createNotification(userId, {
+          type: NOTIFICATION_TYPES.NEW_RELEASE,
+          title: `اثر جدید از ${artistProfile.stageName}`,
+          message: `${artistProfile.stageName} اثر «${song.title}» را منتشر کرد.`,
+          link: song.albumId
+            ? `/album/${song.albumId}`
+            : `/artist/${artistProfile.id}#song-${song.id}`,
+        }),
+      ),
+    );
+
+    return successResponse(buildSongPayload(song));
   } catch (error) {
     return errorResponse("خطا در بارگذاری آهنگ", 500);
   }
 }
 
-export async function updateSong(songId, updates) {
+export async function updateSong(songId, updates, coverFile = null) {
   await delay();
 
   try {
@@ -1954,9 +2442,28 @@ export async function updateSong(songId, updates) {
     }
 
     const previousSong = songs[songIndex];
+    const currentUser = getCurrentUserRecord();
+    const artistProfile = getArtistProfileById(previousSong.artistId);
+    if (!canManageArtist(currentUser, artistProfile) || !isVerifiedArtist(currentUser, artistProfile)) {
+      return errorResponse("شما اجازه ویرایش این آهنگ را ندارید", 403);
+    }
+
     const nextUpdates = { ...updates };
     delete nextUpdates.id;
     delete nextUpdates.artistId;
+    const updatesAlbum = Object.prototype.hasOwnProperty.call(nextUpdates, "albumId");
+    if (updatesAlbum && nextUpdates.albumId) {
+      const targetAlbum = getAlbumByIdSync(nextUpdates.albumId);
+      if (!targetAlbum || targetAlbum.artistId !== previousSong.artistId) {
+        return errorResponse("آلبوم انتخاب‌شده معتبر نیست", 400);
+      }
+    }
+    if (updatesAlbum) {
+      nextUpdates.isSingle = !nextUpdates.albumId;
+    }
+    if (coverFile) {
+      nextUpdates.cover = resolveFileUrl(coverFile, previousSong.cover || DEFAULT_COVER);
+    }
 
     songs[songIndex] = {
       ...previousSong,
@@ -1993,15 +2500,14 @@ export async function updateSong(songId, updates) {
       }
     }
 
-    if (songs[songIndex].albumId === null) {
-      const artistProfile = getArtistProfileById(songs[songIndex].artistId);
-      if (artistProfile) {
-        upsertArtistProfile({
-          ...artistProfile,
-          singleIds: pushUnique(artistProfile.singleIds || [], songId),
-          updatedAt: new Date().toISOString(),
-        });
-      }
+    if (artistProfile) {
+      upsertArtistProfile({
+        ...artistProfile,
+        singleIds: songs[songIndex].albumId
+          ? removeFromArray(artistProfile.singleIds || [], songId)
+          : pushUnique(artistProfile.singleIds || [], songId),
+        updatedAt: new Date().toISOString(),
+      });
     }
 
     return successResponse(buildSongPayload(songs[songIndex]));
@@ -2018,6 +2524,12 @@ export async function deleteSong(songId) {
 
     if (!song) {
       return errorResponse("آهنگ پیدا نشد", 404);
+    }
+
+    const currentUser = getCurrentUserRecord();
+    const artistProfile = getArtistProfileById(song.artistId);
+    if (!canManageArtist(currentUser, artistProfile) || !isVerifiedArtist(currentUser, artistProfile)) {
+      return errorResponse("شما اجازه حذف این آهنگ را ندارید", 403);
     }
 
     saveSongs(getSongs().filter((item) => item.id !== songId));

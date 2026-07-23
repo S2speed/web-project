@@ -6,20 +6,27 @@ import { useParams, useRouter } from 'next/navigation';
 import { usePlayer } from '@/contexts/PlayerContext';
 import { useUser } from '@/contexts/UserContext';
 import { followUser, getArtistById, unfollowUser } from '@/lib/mockApi';
-import { SUBSCRIPTION_TYPES as SUBSCRIPTIONS } from '@/utils/constants';
+import { DEFAULT_COVER, SUBSCRIPTION_TYPES as SUBSCRIPTIONS } from '@/utils/constants';
 
 function formatNumber(value) {
   return new Intl.NumberFormat('fa-IR').format(Number(value) || 0);
 }
 
 function CoverImage({ src, alt, className = '' }) {
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
   return (
     <div className={`overflow-hidden bg-white/10 ${className}`}>
-      {src ? (
-        <img src={src} alt={alt} className="h-full w-full object-cover" />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center text-2xl text-slate-500">♪</div>
-      )}
+      <img
+        src={hasError ? DEFAULT_COVER : src || DEFAULT_COVER}
+        alt={alt}
+        onError={() => setHasError(true)}
+        className="h-full w-full object-cover"
+      />
     </div>
   );
 }
@@ -36,7 +43,7 @@ function StatCard({ label, value }) {
 export default function ArtistProfilePage() {
   const params = useParams();
   const router = useRouter();
-  const { user: currentUser } = useUser();
+  const { user: currentUser, refreshUser } = useUser();
   const { playSong } = usePlayer();
   const artistId = params?.id;
 
@@ -47,7 +54,7 @@ export default function ArtistProfilePage() {
   const [isFollowProcessing, setIsFollowProcessing] = useState(false);
 
   const artistUser = artist?.user || null;
-  const followTargetId = artistUser?.id || artist?.userId || null;
+  const followTargetId = artistUser?.id || artist?.id || null;
   const artistName = artist?.stageName || artistUser?.displayName || 'هنرمند';
   const artistAvatar = artistUser?.avatar || artist?.cover;
   const artistBio = artistUser?.bio || artist?.bio || 'بیوگرافی برای این هنرمند ثبت نشده است.';
@@ -57,7 +64,7 @@ export default function ArtistProfilePage() {
   const singles = useMemo(() => songs.filter((song) => song.isSingle || !song.albumId), [songs]);
   const isVerified = artist?.verificationStatus === 'approved' || artistUser?.isVerified;
   const isGoldUser = currentUser?.subscription === SUBSCRIPTIONS.GOLD;
-  const followerCount = artistUser?.followers?.length || 0;
+  const followerCount = artistUser?.followers?.length ?? artist?.followers?.length ?? 0;
   const isOwnArtistProfile = Boolean(currentUser?.id && followTargetId && currentUser.id === followTargetId);
 
   const stats = useMemo(() => {
@@ -121,17 +128,26 @@ export default function ArtistProfilePage() {
     const result = isFollowing ? await unfollowUser(currentUser.id, followTargetId) : await followUser(currentUser.id, followTargetId);
 
     if (result.success) {
+      await refreshUser();
       setIsFollowing((previous) => !previous);
       setArtist((previous) => {
-        if (!previous?.user) {
+        if (!previous) {
           return previous;
         }
 
-        const followers = isFollowing
-          ? (previous.user.followers || []).filter((id) => id !== currentUser.id)
-          : [...(previous.user.followers || []), currentUser.id];
+        if (previous.user) {
+          const followers = isFollowing
+            ? (previous.user.followers || []).filter((id) => id !== currentUser.id)
+            : [...(previous.user.followers || []), currentUser.id];
 
-        return { ...previous, user: { ...previous.user, followers } };
+          return { ...previous, user: { ...previous.user, followers } };
+        }
+
+        const followers = isFollowing
+          ? (previous.followers || []).filter((id) => id !== currentUser.id)
+          : [...(previous.followers || []), currentUser.id];
+
+        return { ...previous, followers };
       });
     } else {
       setError(result.error?.message || 'خطا در تغییر وضعیت دنبال کردن');
@@ -171,13 +187,15 @@ export default function ArtistProfilePage() {
               <div>
                 <div className="mb-3 flex flex-wrap justify-center gap-2 sm:justify-start">
                   <span className="rounded-full bg-cyan-300 px-3 py-1 text-xs font-bold text-slate-950">{genres}</span>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
+                  <h1 className="text-3xl font-black md:text-4xl">{artistName}</h1>
                   {isVerified && (
                     <span className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-100">
                       نشان هنرمند تایید شده
                     </span>
                   )}
                 </div>
-                <h1 className="text-3xl font-black md:text-4xl">{artistName}</h1>
                 <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">{artistBio}</p>
               </div>
             </div>
@@ -223,7 +241,7 @@ export default function ArtistProfilePage() {
           {albums.length ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {albums.map((album) => (
-                <Link key={album.id} href="/library" className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 transition hover:-translate-y-1 hover:bg-white/10">
+                <Link key={album.id} href={`/album/${album.id}`} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 transition hover:-translate-y-1 hover:bg-white/10">
                   <CoverImage src={album.cover} alt={album.title} className="mb-3 aspect-square rounded-xl" />
                   <h3 className="truncate font-semibold">{album.title}</h3>
                   <p className="mt-1 truncate text-sm text-slate-400">{album.releaseDate || 'بدون تاریخ انتشار'}</p>
@@ -246,7 +264,7 @@ export default function ArtistProfilePage() {
           {singles.length ? (
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05]">
               {singles.map((song) => (
-                <div key={song.id} className="flex items-center gap-3 border-b border-white/10 p-4 last:border-b-0">
+                <div id={`song-${song.id}`} key={song.id} className="flex scroll-mt-24 items-center gap-3 border-b border-white/10 p-4 last:border-b-0">
                   <CoverImage src={song.cover} alt={song.title} className="h-14 w-14 rounded-xl" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold">{song.title}</p>
@@ -260,7 +278,7 @@ export default function ArtistProfilePage() {
                   )}
                   <button
                     type="button"
-                    onClick={() => playSong(song)}
+                    onClick={() => playSong(song, singles)}
                     className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-cyan-200"
                   >
                     پخش

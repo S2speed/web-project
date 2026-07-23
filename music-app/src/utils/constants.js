@@ -74,5 +74,5 @@ export const LIBRARY_SORT_OPTIONS = {
 };
 
 // Default images used when a user has no avatar/cover set
-export const DEFAULT_AVATAR = "/images/default-avatar.png";
-export const DEFAULT_COVER = "/images/default-cover.png";
+export const DEFAULT_AVATAR = "/images/default-avatar.svg";
+export const DEFAULT_COVER = "/images/default-cover.svg";

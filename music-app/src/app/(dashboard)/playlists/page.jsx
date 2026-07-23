@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/contexts/UserContext';
@@ -12,7 +12,7 @@ import {
   getUserPlaylists,
   renamePlaylist,
 } from '@/lib/mockApi';
-import { PLAYLIST_LIMITS, SUBSCRIPTION_TYPES as SUBSCRIPTIONS } from '@/utils/constants';
+import { DEFAULT_COVER, PLAYLIST_LIMITS, SUBSCRIPTION_TYPES as SUBSCRIPTIONS } from '@/utils/constants';
 
 const subscriptionLabels = {
   [SUBSCRIPTIONS.FREE]: 'پایه',
@@ -40,7 +40,14 @@ function SongPreview({ song }) {
   return (
     <div className="flex min-w-0 items-center gap-2 rounded-xl bg-white/[0.04] p-2">
       <div className="h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-white/10">
-        {song.cover ? <img src={song.cover} alt={song.title} className="h-full w-full object-cover" /> : null}
+        <img
+          src={song.cover || DEFAULT_COVER}
+          alt={song.title}
+          onError={(event) => {
+            event.currentTarget.src = DEFAULT_COVER;
+          }}
+          className="h-full w-full object-cover"
+        />
       </div>
       <div className="min-w-0">
         <p className="truncate text-xs font-semibold text-white">{song.title}</p>
@@ -53,6 +60,7 @@ function SongPreview({ song }) {
 export default function PlaylistsPage() {
   const router = useRouter();
   const { user, isLoading } = useUser();
+  const createInputRef = useRef(null);
   const [playlists, setPlaylists] = useState([]);
   const [limitInfo, setLimitInfo] = useState(null);
   const [newName, setNewName] = useState('');
@@ -230,7 +238,7 @@ export default function PlaylistsPage() {
         )}
 
         <section className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
-          <form onSubmit={handleCreate} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
+          <form id="create-playlist" onSubmit={handleCreate} className="scroll-mt-24 rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
             <h2 className="text-xl font-bold">ایجاد پلی‌لیست</h2>
             <p className="mt-2 text-sm leading-6 text-slate-400">{limitText(limitInfo)}</p>
             {limitInfo && !limitInfo.allowed && (
@@ -238,6 +246,7 @@ export default function PlaylistsPage() {
             )}
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <input
+                ref={createInputRef}
                 value={newName}
                 onChange={(event) => setNewName(event.target.value)}
                 placeholder="نام پلی‌لیست جدید"
@@ -321,6 +330,17 @@ export default function PlaylistsPage() {
             <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.03] p-10 text-center">
               <p className="text-xl font-bold text-white">هنوز پلی‌لیستی ندارید</p>
               <p className="mt-2 text-sm leading-6 text-slate-400">اولین پلی‌لیست خود را بسازید تا آهنگ‌ها را در کارت آن ببینید.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  document.getElementById('create-playlist')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  createInputRef.current?.focus({ preventScroll: true });
+                }}
+                disabled={!canCreate}
+                className="mt-5 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                ایجاد اولین پلی‌لیست
+              </button>
             </div>
           )}
         </section>

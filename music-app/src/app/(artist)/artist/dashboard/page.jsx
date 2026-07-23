@@ -17,9 +17,18 @@ import { USER_ROLES } from '@/utils/constants';
 const control = 'mt-2 w-full rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400';
 const fileControl = 'mt-2 w-full rounded-xl border border-dashed border-white/15 bg-slate-950/60 p-2 text-xs text-slate-400 file:ml-3 file:rounded-lg file:border-0 file:bg-emerald-400 file:px-3 file:py-2 file:font-bold file:text-slate-950';
 const today = () => new Date().toISOString().slice(0, 10);
-const blankSong = () => ({ title: '', genre: '', releaseDate: today(), albumId: '', lyrics: '' });
+const blankSong = () => ({
+  title: '',
+  genre: '',
+  releaseDate: today(),
+  albumId: '',
+  lyrics: '',
+  featuredArtists: '',
+});
 const blankAlbum = () => ({ title: '', genre: '', releaseDate: today(), description: '' });
 const number = (value) => Number(value || 0).toLocaleString('fa-IR');
+const supportedAudioExtensions = ['.mp3', '.wav', '.flac'];
+const isSupportedAudio = (file) => supportedAudioExtensions.some((extension) => file?.name?.toLowerCase().endsWith(extension));
 
 export default function ArtistDashboardPage() {
   const { user, isLoading: userLoading } = useUser();
@@ -52,11 +61,23 @@ export default function ArtistDashboardPage() {
 
   const saveSong = async (event) => {
     event.preventDefault();
+    if (!editingSong && (!audioFile || !isSupportedAudio(audioFile))) {
+      setNotice({ error: true, text: 'یک فایل صوتی معتبر با فرمت MP3، WAV یا FLAC انتخاب کنید.' });
+      return;
+    }
     setSaving(true);
     setNotice(null);
-    const payload = { ...songForm, artistId: artist.id, albumId: songForm.albumId || null };
+    const payload = {
+      ...songForm,
+      artistId: artist.id,
+      albumId: songForm.albumId || null,
+      featuredArtists: songForm.featuredArtists
+        .split(/[,،]/)
+        .map((name) => name.trim())
+        .filter(Boolean),
+    };
     const result = editingSong
-      ? await updateSong(editingSong.id, payload)
+      ? await updateSong(editingSong.id, payload, songCover)
       : await uploadSong(payload, audioFile, songCover);
     if (result.success) {
       setNotice({ text: editingSong ? 'اثر ویرایش شد.' : 'اثر جدید منتشر شد.' });
@@ -76,7 +97,7 @@ export default function ArtistDashboardPage() {
     setNotice(null);
     const payload = { ...albumForm, artistId: artist.id };
     const result = editingAlbum
-      ? await updateAlbum(editingAlbum.id, payload)
+      ? await updateAlbum(editingAlbum.id, payload, albumCover)
       : await createAlbum(payload, albumCover);
     if (result.success) {
       setNotice({ text: editingAlbum ? 'آلبوم ویرایش شد.' : 'آلبوم ایجاد شد.' });
@@ -93,7 +114,9 @@ export default function ArtistDashboardPage() {
     setSongForm({
       title: song.title || '', genre: song.genre || '', releaseDate: song.releaseDate || today(),
       albumId: song.albumId || '', lyrics: song.lyrics || '',
+      featuredArtists: Array.isArray(song.featuredArtists) ? song.featuredArtists.join('، ') : '',
     });
+    setSongCover(null);
     setTab('upload');
   };
 
@@ -103,6 +126,7 @@ export default function ArtistDashboardPage() {
       title: album.title || '', genre: album.genre || '', releaseDate: album.releaseDate || today(),
       description: album.description || '',
     });
+    setAlbumCover(null);
   };
 
   const removeSong = async (song) => {
@@ -125,6 +149,18 @@ export default function ArtistDashboardPage() {
   const stats = artist?.stats || {};
   const songs = artist?.songs || [];
   const albums = artist?.albums || [];
+  const isVerifiedArtist = stats.verified === true;
+
+  if (!artist) return <AccessDenied text="پروفایل هنرمند برای این حساب پیدا نشد." />;
+  if (!isVerifiedArtist) {
+    return (
+      <AccessDenied
+        title="در انتظار تأیید هنرمند"
+        text="پنل مدیریت و انتشار آثار پس از بررسی و تأیید حساب هنرمند فعال می‌شود."
+        tone="pending"
+      />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 pb-10 sm:p-6 lg:p-8">
@@ -165,7 +201,11 @@ export default function ArtistDashboardPage() {
           {!songs.length ? <Empty text="هنوز اثری منتشر نشده است." /> : <div className="divide-y divide-white/10">
             {songs.map((song) => <article key={song.id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
               <img src={song.cover} alt="" className="h-16 w-16 rounded-xl bg-slate-800 object-cover" />
-              <div className="min-w-0 flex-1"><h3 className="truncate font-bold">{song.title}</h3><p className="text-xs text-slate-400">{song.genre || 'بدون ژانر'} · {song.albumId ? 'عضو آلبوم' : 'تک‌آهنگ'} · {song.releaseDate}</p></div>
+              <div className="min-w-0 flex-1">
+                <h3 className="truncate font-bold">{song.title}</h3>
+                <p className="text-xs text-slate-400">{song.genre || 'بدون ژانر'} · {song.albumId ? 'عضو آلبوم' : 'تک‌آهنگ'} · {song.releaseDate}</p>
+                {!!song.featuredArtists?.length && <p className="mt-1 truncate text-xs text-emerald-300">همکاران: {song.featuredArtists.join('، ')}</p>}
+              </div>
               <div className="flex gap-5 text-sm text-slate-300"><span>{number(song.playCount)} پخش</span><span>{number(song.listeners)} شنونده</span></div>
               <div className="flex gap-2"><button type="button" onClick={() => editSong(song)} className="rounded-xl bg-white/10 px-3 py-2 text-sm hover:bg-white/20">ویرایش</button><button type="button" onClick={() => removeSong(song)} className="rounded-xl bg-rose-500/10 px-3 py-2 text-sm text-rose-300">حذف</button></div>
             </article>)}
@@ -190,8 +230,8 @@ export default function ArtistDashboardPage() {
             <Field label="ژانر"><input value={albumForm.genre} onChange={(e) => setAlbumForm({ ...albumForm, genre: e.target.value })} className={control} /></Field>
             <Field label="تاریخ انتشار"><input type="date" value={albumForm.releaseDate} onChange={(e) => setAlbumForm({ ...albumForm, releaseDate: e.target.value })} className={control} /></Field>
             <Field label="توضیحات"><textarea rows="3" value={albumForm.description} onChange={(e) => setAlbumForm({ ...albumForm, description: e.target.value })} className={control} /></Field>
-            {!editingAlbum && <Field label="تصویر کاور"><input type="file" accept="image/*" onChange={(e) => setAlbumCover(e.target.files?.[0] || null)} className={fileControl} /></Field>}
-            <div className="flex gap-2"><button disabled={saving} className="flex-1 rounded-xl bg-emerald-400 py-3 font-bold text-slate-950 disabled:opacity-50">{saving ? 'در حال ذخیره...' : 'ذخیره آلبوم'}</button>{editingAlbum && <button type="button" onClick={() => { setEditingAlbum(null); setAlbumForm(blankAlbum()); }} className="rounded-xl bg-white/10 px-4">انصراف</button>}</div>
+            <Field label={editingAlbum ? 'تصویر کاور جدید (اختیاری)' : 'تصویر کاور'}><input type="file" accept="image/*" onChange={(e) => setAlbumCover(e.target.files?.[0] || null)} className={fileControl} /></Field>
+            <div className="flex gap-2"><button disabled={saving} className="flex-1 rounded-xl bg-emerald-400 py-3 font-bold text-slate-950 disabled:opacity-50">{saving ? 'در حال ذخیره...' : 'ذخیره آلبوم'}</button>{editingAlbum && <button type="button" onClick={() => { setEditingAlbum(null); setAlbumForm(blankAlbum()); setAlbumCover(null); }} className="rounded-xl bg-white/10 px-4">انصراف</button>}</div>
           </form>
         </div>
       )}
@@ -205,9 +245,13 @@ export default function ArtistDashboardPage() {
             <Field label="تاریخ انتشار"><input type="date" value={songForm.releaseDate} onChange={(e) => setSongForm({ ...songForm, releaseDate: e.target.value })} className={control} /></Field>
             <Field label="نوع انتشار"><select value={songForm.albumId} onChange={(e) => setSongForm({ ...songForm, albumId: e.target.value })} className={control}><option value="">تک‌آهنگ</option>{albums.map((album) => <option key={album.id} value={album.id}>آلبوم {album.title}</option>)}</select></Field>
           </div>
+          <Field label="هنرمندان همکار"><input value={songForm.featuredArtists} onChange={(e) => setSongForm({ ...songForm, featuredArtists: e.target.value })} className={control} placeholder="نام‌ها را با ویرگول جدا کنید (اختیاری)" /></Field>
           <Field label="متن آهنگ"><textarea rows="5" value={songForm.lyrics} onChange={(e) => setSongForm({ ...songForm, lyrics: e.target.value })} className={control} placeholder="اختیاری" /></Field>
-          {!editingSong && <div className="grid gap-4 sm:grid-cols-2"><Field label="فایل صوتی"><input required type="file" accept="audio/mpeg,audio/wav,audio/flac,.mp3,.wav,.flac" onChange={(e) => setAudioFile(e.target.files?.[0] || null)} className={fileControl} /></Field><Field label="تصویر کاور"><input type="file" accept="image/*" onChange={(e) => setSongCover(e.target.files?.[0] || null)} className={fileControl} /></Field></div>}
-          <div className="flex gap-2"><button disabled={saving} className="flex-1 rounded-xl bg-emerald-400 py-3 font-bold text-slate-950 disabled:opacity-50">{saving ? 'در حال ذخیره...' : editingSong ? 'ذخیره تغییرات' : 'انتشار اثر'}</button>{editingSong && <button type="button" onClick={() => { setEditingSong(null); setSongForm(blankSong()); }} className="rounded-xl bg-white/10 px-5">انصراف</button>}</div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {!editingSong && <Field label="فایل صوتی"><input required type="file" accept="audio/mpeg,audio/wav,audio/flac,.mp3,.wav,.flac" onChange={(e) => setAudioFile(e.target.files?.[0] || null)} className={fileControl} /></Field>}
+            <Field label={editingSong ? 'تصویر کاور جدید (اختیاری)' : 'تصویر کاور'}><input type="file" accept="image/*" onChange={(e) => setSongCover(e.target.files?.[0] || null)} className={fileControl} /></Field>
+          </div>
+          <div className="flex gap-2"><button disabled={saving} className="flex-1 rounded-xl bg-emerald-400 py-3 font-bold text-slate-950 disabled:opacity-50">{saving ? 'در حال ذخیره...' : editingSong ? 'ذخیره تغییرات' : 'انتشار اثر'}</button>{editingSong && <button type="button" onClick={() => { setEditingSong(null); setSongForm(blankSong()); setSongCover(null); }} className="rounded-xl bg-white/10 px-5">انصراف</button>}</div>
         </form>
       )}
     </div>
@@ -218,4 +262,7 @@ function Metric({ label, value }) { return <article className="rounded-2xl borde
 function Field({ label, children }) { return <label className="block text-sm font-medium text-slate-300">{label}{children}</label>; }
 function Empty({ text }) { return <div className="rounded-2xl border border-dashed border-white/15 p-10 text-center text-slate-400">{text}</div>; }
 function Loading({ text }) { return <div className="flex min-h-[60vh] items-center justify-center text-slate-300">{text}</div>; }
-function AccessDenied({ text }) { return <div className="mx-auto max-w-xl p-6 text-center"><div className="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-8"><h1 className="text-2xl font-bold">دسترسی محدود</h1><p className="mt-2 text-slate-300">{text}</p><Link href="/" className="mt-5 inline-block rounded-xl bg-emerald-500 px-5 py-2 font-semibold text-slate-950">بازگشت</Link></div></div>; }
+function AccessDenied({ text, title = 'دسترسی محدود', tone = 'denied' }) {
+  const palette = tone === 'pending' ? 'border-amber-400/20 bg-amber-500/10' : 'border-rose-400/20 bg-rose-500/10';
+  return <div className="mx-auto max-w-xl p-6 text-center"><div className={`rounded-3xl border p-8 ${palette}`}><h1 className="text-2xl font-bold">{title}</h1><p className="mt-2 text-slate-300">{text}</p><Link href="/" className="mt-5 inline-block rounded-xl bg-emerald-500 px-5 py-2 font-semibold text-slate-950">بازگشت</Link></div></div>;
+}

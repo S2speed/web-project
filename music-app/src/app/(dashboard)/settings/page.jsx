@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/contexts/UserContext';
-import { updateUser } from '@/lib/mockApi';
+import { createTicket, deleteAccount, getSubscriptionPricing, getUserTickets, updateUser } from '@/lib/mockApi';
 import { SUBSCRIPTION_TYPES as SUBSCRIPTIONS } from '@/utils/constants';
 
 const subscriptionLabels = {
@@ -59,15 +59,18 @@ function Toggle({ checked, onChange, label, description }) {
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, isLoading, logout } = useUser();
+  const { user, isLoading, logout, refreshUser } = useUser();
   const [settings, setSettings] = useState(defaultSettings);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [isChangingSubscription, setIsChangingSubscription] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState(SUBSCRIPTIONS.FREE);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deletePhrase, setDeletePhrase] = useState('');
+  const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
+  const [tickets, setTickets] = useState([]);
+  const [ticketSaving, setTicketSaving] = useState(false);
+  const [subscriptionPrices, setSubscriptionPrices] = useState({ silver: null, gold: null });
 
   useEffect(() => {
     if (!user) {
@@ -83,6 +86,12 @@ export default function SettingsPage() {
       language: user.language || defaultSettings.language,
     });
     setActiveSubscription(user.subscription || SUBSCRIPTIONS.FREE);
+    getUserTickets(user.id).then((result) => {
+      if (result.success) setTickets(result.data);
+    });
+    getSubscriptionPricing().then((result) => {
+      if (result.success) setSubscriptionPrices(result.data);
+    });
   }, [user]);
 
   const handleNotificationChange = (key, value) => {
@@ -110,6 +119,7 @@ export default function SettingsPage() {
     const result = await updateUser(user.id, settings);
 
     if (result.success) {
+      await refreshUser();
       setNotice('تنظیمات برنامه با موفقیت ذخیره شد.');
     } else {
       setError(result.error?.message || 'خطا در ذخیره تنظیمات');
@@ -118,25 +128,12 @@ export default function SettingsPage() {
     setIsSaving(false);
   };
 
-  const handleSubscriptionChange = async (nextSubscription) => {
+  const handleSubscriptionChange = (nextSubscription) => {
     if (!user || nextSubscription === activeSubscription) {
       return;
     }
 
-    setIsChangingSubscription(true);
-    setNotice('');
-    setError('');
-
-    const result = await updateUser(user.id, { subscription: nextSubscription });
-
-    if (result.success) {
-      setActiveSubscription(nextSubscription);
-      setNotice(`اشتراک ${subscriptionLabels[nextSubscription]} در نسخه ماک فعال شد.`);
-    } else {
-      setError(result.error?.message || 'خطا در تغییر اشتراک');
-    }
-
-    setIsChangingSubscription(false);
+    router.push(`/payment?plan=${encodeURIComponent(nextSubscription)}`);
   };
 
   const handleDeleteAccount = async () => {
@@ -157,12 +154,7 @@ export default function SettingsPage() {
     setIsSaving(true);
     setError('');
 
-    const result = await updateUser(user.id, {
-      displayName: 'حساب حذف‌شده',
-      email: `deleted-${user.id}@music.local`,
-      isDeleted: true,
-      notificationSettings: { email: false, push: false, inApp: false, dailyLimit: 0 },
-    });
+    const result = await deleteAccount(user.id);
 
     if (result.success) {
       await logout();
@@ -172,6 +164,22 @@ export default function SettingsPage() {
 
     setError(result.error?.message || 'خطا در حذف حساب');
     setIsSaving(false);
+  };
+
+  const handleCreateTicket = async (event) => {
+    event.preventDefault();
+    setTicketSaving(true);
+    setNotice('');
+    setError('');
+    const result = await createTicket(user.id, ticketForm.subject, ticketForm.message);
+    if (result.success) {
+      setTickets((items) => [result.data, ...items]);
+      setTicketForm({ subject: '', message: '' });
+      setNotice('تیکت شما ثبت شد و برای تیم پشتیبانی ارسال گردید.');
+    } else {
+      setError(result.error?.message || 'خطا در ثبت تیکت');
+    }
+    setTicketSaving(false);
   };
 
   if (isLoading) {
@@ -293,7 +301,7 @@ export default function SettingsPage() {
                 <p className="mt-1 text-2xl font-black text-emerald-200">{subscriptionLabels[subscription]}</p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">{subscriptionDescriptions[subscription]}</p>
               </div>
-              <p className="mt-4 text-xs leading-5 text-slate-500">انتخاب طرح در این فاز به‌صورت ماک ذخیره می‌شود؛ اتصال به درگاه پرداخت مربوط به فاز بک‌اند است.</p>
+              <p className="mt-4 text-xs leading-5 text-slate-500">برای ارتقا یا تغییر طرح، به صفحه پرداخت هدایت می‌شوید. اتصال واقعی به درگاه در فاز دوم انجام می‌شود.</p>
             </section>
           </div>
         </section>
@@ -311,6 +319,7 @@ export default function SettingsPage() {
                 <article key={plan} className={`relative rounded-2xl border p-5 ${subscriptionStyle[plan]} ${isCurrent ? 'ring-2 ring-emerald-400/60' : ''}`}>
                   {isCurrent && <span className="absolute left-4 top-4 rounded-full bg-emerald-400 px-3 py-1 text-xs font-bold text-slate-950">طرح فعلی</span>}
                   <h3 className="text-xl font-black">{subscriptionLabels[plan]}</h3>
+                  <p className="mt-2 text-lg font-black text-emerald-200">{plan === SUBSCRIPTIONS.FREE ? 'رایگان' : subscriptionPrices[plan] == null ? 'در حال دریافت قیمت...' : `$${Number(subscriptionPrices[plan]).toFixed(2)} / ماه`}</p>
                   <p className="mt-3 min-h-12 text-sm leading-6 text-slate-400">{subscriptionDescriptions[plan]}</p>
                   <ul className="mt-4 space-y-2 text-sm text-slate-300">
                     {subscriptionFeatures[plan].map((feature) => <li key={feature}>✓ {feature}</li>)}
@@ -318,10 +327,10 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => handleSubscriptionChange(plan)}
-                    disabled={isCurrent || isChangingSubscription}
+                    disabled={isCurrent}
                     className={`mt-6 w-full rounded-xl px-4 py-3 text-sm font-bold transition disabled:cursor-not-allowed ${isCurrent ? 'bg-emerald-400/15 text-emerald-200' : 'bg-white/10 text-white hover:bg-white/15 disabled:opacity-50'}`}
                   >
-                    {isCurrent ? 'فعال' : isChangingSubscription ? 'در حال تغییر...' : `انتخاب ${subscriptionLabels[plan]}`}
+                    {isCurrent ? 'فعال' : `ادامه برای ${subscriptionLabels[plan]}`}
                   </button>
                 </article>
               );
@@ -329,10 +338,32 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        <section className="grid gap-6 rounded-3xl border border-indigo-400/20 bg-indigo-500/[0.06] p-5 md:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+          <form onSubmit={handleCreateTicket} className="space-y-4">
+            <div><p className="text-sm text-indigo-200">مرکز پشتیبانی</p><h2 className="mt-1 text-2xl font-black">ثبت تیکت جدید</h2><p className="mt-2 text-sm text-slate-400">پرسش یا مشکل خود را ارسال کنید؛ پاسخ تیم پشتیبانی از طریق اعلان‌ها اطلاع‌رسانی می‌شود.</p></div>
+            <label className="block text-sm text-slate-300">موضوع<input required value={ticketForm.subject} onChange={(event) => setTicketForm({ ...ticketForm, subject: event.target.value })} className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2.5 text-white outline-none focus:border-indigo-300" /></label>
+            <label className="block text-sm text-slate-300">متن پیام<textarea required rows="4" value={ticketForm.message} onChange={(event) => setTicketForm({ ...ticketForm, message: event.target.value })} className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2.5 text-white outline-none focus:border-indigo-300" /></label>
+            <button disabled={ticketSaving} className="rounded-xl bg-indigo-400 px-6 py-3 text-sm font-bold text-slate-950 disabled:opacity-50">{ticketSaving ? 'در حال ارسال...' : 'ارسال تیکت'}</button>
+          </form>
+          <div>
+            <h3 className="font-bold">تیکت‌های اخیر من</h3>
+            <div className="mt-4 space-y-3">
+              {!tickets.length && <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-slate-500">هنوز تیکتی ثبت نکرده‌اید.</p>}
+              {tickets.slice(0, 5).map((ticket) => (
+                <article key={ticket.id} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                  <div className="flex items-start justify-between gap-3"><strong className="text-sm">{ticket.subject}</strong><span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] ${ticket.status === 'closed' ? 'bg-slate-500/10 text-slate-400' : ticket.status === 'answered' ? 'bg-indigo-500/10 text-indigo-300' : 'bg-emerald-500/10 text-emerald-300'}`}>{ticket.status === 'closed' ? 'بسته' : ticket.status === 'answered' ? 'پاسخ داده‌شده' : 'باز'}</span></div>
+                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">{ticket.message}</p>
+                  <p className="mt-2 text-[11px] text-slate-600">{ticket.id} · {new Intl.DateTimeFormat('fa-IR').format(new Date(ticket.createdAt))}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section className="rounded-3xl border border-red-400/20 bg-red-500/10 p-5 md:p-6">
           <h2 className="text-xl font-bold text-red-100">حذف حساب کاربری</h2>
           <p className="mt-2 text-sm leading-6 text-red-100/80">
-            این گزینه برای نمایش جریان حذف حساب در فاز اول پیاده‌سازی شده است. پس از تایید، حساب در داده‌های موک غیرفعال و کاربر خارج می‌شود.
+            پس از تایید، حساب و داده‌های شخصی وابسته از داده‌های موک حذف می‌شوند و کاربر از سامانه خارج خواهد شد.
           </p>
           {deleteConfirm && (
             <div className="mt-4 max-w-md rounded-2xl border border-red-300/20 bg-slate-950/40 p-4">

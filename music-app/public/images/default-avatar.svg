@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title description">
+  <title id="title">تصویر پیش‌فرض کاربر</title>
+  <desc id="description">نمایه ساده یک کاربر روی پس‌زمینه سبز تیره</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#064e3b"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="128" fill="url(#background)"/>
+  <circle cx="128" cy="96" r="45" fill="#ecfdf5"/>
+  <path d="M45 226c7-48 38-76 83-76s76 28 83 76" fill="#ecfdf5"/>
+</svg>

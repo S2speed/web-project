@@ -72,7 +72,19 @@ export function UserProvider({ children }) {
     dispatch({ type: 'LOGOUT' });
   };
 
-  return <UserContext.Provider value={{ ...state, login, logout }}>{children}</UserContext.Provider>;
+  const refreshUser = async () => {
+    const result = await getCurrentUser();
+
+    if (result.success) {
+      dispatch({ type: 'SET_USER', payload: result.data });
+    } else {
+      dispatch({ type: 'SET_USER', payload: null });
+    }
+
+    return result;
+  };
+
+  return <UserContext.Provider value={{ ...state, login, logout, refreshUser }}>{children}</UserContext.Provider>;
 }
 
 export function useUser() {

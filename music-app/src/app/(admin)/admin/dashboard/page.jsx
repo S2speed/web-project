@@ -52,7 +52,10 @@ export default function AdminDashboardPage() {
     }
     setLoading(true);
     const [pendingResult, ticketResult, financialResult, systemResult, artistResult, userResult] = await Promise.all([
-      getPendingArtists(), getAllTickets(), getMonthlyFinancialReport(), getSystemStats(), getAllArtists(),
+      getPendingArtists(), getAllTickets(),
+      admin ? getMonthlyFinancialReport() : Promise.resolve({ success: false }),
+      admin ? getSystemStats() : Promise.resolve({ success: false }),
+      admin ? getAllArtists() : Promise.resolve({ success: true, data: [] }),
       admin ? getAllUsers() : Promise.resolve({ success: true, data: [] }),
     ]);
     if (pendingResult.success) setPending(pendingResult.data);
@@ -155,60 +158,82 @@ export default function AdminDashboardPage() {
       <header className="rounded-3xl border border-white/10 bg-gradient-to-l from-indigo-500/20 via-slate-900 to-slate-900 p-5 sm:p-8">
         <p className="text-sm font-semibold text-indigo-300">{admin ? 'مدیر سامانه' : 'پشتیبان'}</p>
         <h1 className="mt-1 text-2xl font-black sm:text-3xl">مرکز عملیات و پشتیبانی</h1>
-        <p className="mt-2 text-sm text-slate-300">احراز هویت هنرمندان، تیکت‌ها، حسابرسی و مدیریت اشتراک‌ها</p>
+        <p className="mt-2 text-sm text-slate-300">{admin ? 'احراز هویت، تیکت‌ها، حسابرسی مالی، آمار و مدیریت اشتراک‌ها' : 'بررسی درخواست هنرمندان و پاسخ‌گویی به تیکت‌های کاربران'}</p>
       </header>
 
       {notice && <div role="status" className={`rounded-2xl border p-4 text-sm ${notice.error ? 'border-rose-400/30 bg-rose-500/10 text-rose-200' : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'}`}>{notice.text}</div>}
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <section className={`grid grid-cols-2 gap-3 ${admin ? 'lg:grid-cols-4' : ''}`}>
         <Stat label="درخواست احراز هویت" value={pending.length} color="text-amber-300" />
         <Stat label="تیکت باز" value={openTickets} color="text-rose-300" />
-        <Stat label="کاربر سامانه" value={system?.usersCount} color="text-indigo-300" />
-        <Stat label="استریم کل" value={number(system?.totalStreams)} color="text-emerald-300" />
+        {admin && <Stat label="کاربر سامانه" value={system?.usersCount} color="text-indigo-300" />}
+        {admin && <Stat label="استریم کل" value={number(system?.totalStreams)} color="text-emerald-300" />}
       </section>
 
-      <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/5 p-2">
-        {[
-          ['verification', `احراز هویت (${pending.length})`], ['tickets', `تیکت‌ها (${openTickets})`], ['finance', 'حسابرسی'],
-          ...(admin ? [['system', 'اشتراک‌ها و آمار']] : []),
-        ].map(([value, label]) => <button type="button" key={value} onClick={() => setTab(value)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold ${tab === value ? 'bg-indigo-400 text-slate-950' : 'text-slate-300 hover:bg-white/10'}`}>{label}</button>)}
-      </nav>
+      <div className="grid items-start gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-slate-900/80 p-2 lg:sticky lg:top-6 lg:flex-col lg:overflow-visible" aria-label="بخش‌های داشبورد مدیریت">
+          <p className="hidden px-3 pb-2 pt-1 text-xs font-bold text-slate-500 lg:block">منوی اختصاصی پنل</p>
+          {[
+            ['verification', `احراز هویت (${pending.length})`, '✓'],
+            ['tickets', `تیکت‌ها (${openTickets})`, '✉'],
+            ...(admin ? [['finance', 'حسابرسی مالی', '◈'], ['system', 'اشتراک‌ها و آمار', '▦']] : []),
+          ].map(([value, label, icon]) => <button type="button" key={value} onClick={() => setTab(value)} className={`flex whitespace-nowrap rounded-xl px-4 py-3 text-right text-sm font-semibold transition ${tab === value ? 'bg-indigo-400 text-slate-950' : 'text-slate-300 hover:bg-white/10'}`}><span className="ml-2" aria-hidden="true">{icon}</span>{label}</button>)}
+        </nav>
+
+        <main className="min-w-0">
 
       {tab === 'verification' && (
         <Panel title="درخواست‌های هنرمندی">
-          {!pending.length ? <Empty text="درخواست جدیدی وجود ندارد." /> : <div className="divide-y divide-white/10">{pending.map((artist) => (
-            <article key={artist.id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
-              <img src={artist.cover} alt="" className="h-14 w-14 rounded-full bg-slate-800 object-cover" />
-              <div className="min-w-0 flex-1"><h3 className="font-bold">{artist.stageName}</h3><p className="truncate text-xs text-slate-400">{artist.user?.email || artist.id} · {artist.genres?.join('، ') || 'بدون ژانر'}</p></div>
-              <span className="rounded-full bg-amber-400/10 px-3 py-1 text-xs text-amber-200">در انتظار بررسی</span>
-              <button type="button" onClick={() => setSelectedArtist(artist)} className="rounded-xl bg-white/10 px-4 py-2 text-sm">جزئیات</button>
-              <button type="button" disabled={busy === artist.id} onClick={() => verify(artist, 'approved')} className="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50">تأیید</button>
-            </article>
-          ))}</div>}
+          {!pending.length ? <Empty text="درخواست جدیدی وجود ندارد." /> : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-right text-sm">
+                <thead className="bg-white/5 text-slate-400"><tr><th className="p-4">نام هنری</th><th className="p-4">ایمیل</th><th className="p-4">نمونه‌کارها</th><th className="p-4">وضعیت</th><th className="p-4">عملیات</th></tr></thead>
+                <tbody className="divide-y divide-white/10">{pending.map((artist) => (
+                  <tr key={artist.id}>
+                    <td className="p-4"><div className="flex items-center gap-3"><img src={artist.cover} alt="" className="h-11 w-11 rounded-full bg-slate-800 object-cover" /><strong>{artist.stageName}</strong></div></td>
+                    <td className="p-4 text-slate-300">{artist.user?.email || 'ثبت نشده'}</td>
+                    <td className="p-4">{artist.songs?.length || 0} قطعه</td>
+                    <td className="p-4"><span className="rounded-full bg-amber-400/10 px-3 py-1 text-xs text-amber-200">در انتظار تأیید</span></td>
+                    <td className="p-4"><div className="flex gap-2"><button type="button" onClick={() => setSelectedArtist(artist)} className="rounded-xl bg-white/10 px-3 py-2 text-xs">مشاهده نمونه‌کارها</button><button type="button" disabled={busy === artist.id} onClick={() => verify(artist, 'approved')} className="rounded-xl bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50">تأیید</button></div></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
         </Panel>
       )}
 
       {tab === 'tickets' && (
         <Panel title="تیکت‌های پشتیبانی">
-          {!tickets.length ? <Empty text="تیکتی ثبت نشده است." /> : <div className="divide-y divide-white/10">{tickets.map((ticket) => (
-            <button type="button" key={ticket.id} onClick={() => setSelectedTicket(ticket)} className="flex w-full flex-col gap-3 p-4 text-right hover:bg-white/5 sm:flex-row sm:items-center">
-              <span className={`h-2.5 w-2.5 rounded-full ${ticket.status === 'closed' ? 'bg-slate-500' : 'bg-emerald-400'}`} />
-              <div className="min-w-0 flex-1"><h3 className="truncate font-bold">{ticket.subject}</h3><p className="truncate text-xs text-slate-400">{ticket.message}</p></div>
-              <span className="text-xs text-slate-500">{date(ticket.updatedAt)}</span><span className="rounded-full bg-white/5 px-3 py-1 text-xs">{ticket.status === 'closed' ? 'بسته' : 'باز'}</span>
-            </button>
-          ))}</div>}
+          {!tickets.length ? <Empty text="تیکتی ثبت نشده است." /> : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-right text-sm">
+                <thead className="bg-white/5 text-slate-400"><tr><th className="p-4">شناسه</th><th className="p-4">نام کاربر</th><th className="p-4">موضوع</th><th className="p-4">تاریخ ارسال</th><th className="p-4">وضعیت</th></tr></thead>
+                <tbody className="divide-y divide-white/10">{tickets.map((ticket) => (
+                  <tr key={ticket.id} onClick={() => setSelectedTicket(ticket)} className="cursor-pointer hover:bg-white/5">
+                    <td className="p-4 font-mono text-xs text-slate-400">{ticket.id}</td>
+                    <td className="p-4 font-semibold">{ticket.user?.displayName || ticket.user?.username || 'کاربر حذف‌شده'}</td>
+                    <td className="max-w-xs p-4"><p className="truncate font-bold">{ticket.subject}</p><p className="truncate text-xs text-slate-500">{ticket.message}</p></td>
+                    <td className="p-4 text-slate-400">{date(ticket.createdAt)}</td>
+                    <td className="p-4"><TicketStatus status={ticket.status} /></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
         </Panel>
       )}
 
-      {tab === 'finance' && (
+      {tab === 'finance' && admin && (
         <div className="space-y-6">
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Money label="درآمد اشتراک" value={financial?.subscriptionRevenue} /><Money label="درآمد استریم" value={financial?.streamRevenue} /><Money label="سهم هنرمندان" value={financial?.artistPayouts} /><Money label="درآمد پلتفرم" value={financial?.platformRevenue} /></section>
           <section className="overflow-x-auto rounded-3xl border border-white/10 bg-white/5">
-            <table className="w-full min-w-[760px] text-right text-sm"><thead className="bg-white/5 text-slate-400"><tr><th className="p-4">هنرمند</th><th className="p-4">شنونده ماهانه</th><th className="p-4">استریم</th><th className="p-4">پاداش</th><th className="p-4">وضعیت</th><th className="p-4">عملیات</th></tr></thead>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 p-5"><div><h2 className="text-xl font-bold">محاسبات مالی ماهانه</h2><p className="mt-1 text-xs text-slate-400">دوره گزارش: {financial?.month || 'ماه جاری'} · پاداش آزمایشی بر اساس فرمول فاز اول</p></div><span className="rounded-full bg-indigo-500/10 px-3 py-1 text-xs text-indigo-300">فقط مدیر سامانه</span></div>
+            <table className="w-full min-w-[900px] text-right text-sm"><thead className="bg-white/5 text-slate-400"><tr><th className="p-4">نام و شناسه هنرمند</th><th className="p-4">شنوندگان منحصربه‌فرد ماه</th><th className="p-4">استریم ماه جاری</th><th className="p-4">پاداش محاسبه‌شده</th><th className="p-4">وضعیت پرداخت</th><th className="p-4">عملیات</th></tr></thead>
               <tbody className="divide-y divide-white/10">{artists.map((artist) => {
                 const stats = artistStats[artist.id] || {};
-                const paid = financial?.settledPayments?.some((payment) => payment.artistId === artist.id && payment.status === 'settled');
-                return <tr key={artist.id}><td className="p-4 font-bold">{artist.stageName}<span className="mr-2 text-xs text-slate-500">{artist.id}</span></td><td className="p-4">{number(stats.monthlyListeners)}</td><td className="p-4">{number(stats.totalStreams)}</td><td className="p-4">${Number(stats.estimatedEarnings || 0).toFixed(2)}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs ${paid ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-200'}`}>{paid ? 'تسویه‌شده' : 'در انتظار پرداخت'}</span></td><td className="p-4">{admin ? <button type="button" disabled={paid || busy === artist.id} onClick={() => settle(artist)} className="rounded-lg bg-indigo-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-40">تأیید تسویه</button> : <span className="text-xs text-slate-500">فقط مدیر</span>}</td></tr>;
+                const paid = financial?.settledPayments?.some((payment) => payment.artistId === artist.id && payment.month === financial?.month && payment.status === 'settled');
+                return <tr key={artist.id}><td className="p-4"><strong className="block">{artist.stageName}</strong><span className="mt-1 block font-mono text-xs text-slate-500">{artist.id}</span></td><td className="p-4">{number(stats.monthlyUniqueListeners)}</td><td className="p-4">{number(stats.monthlyStreams)}</td><td className="p-4 font-bold text-emerald-300">${Number(stats.estimatedMonthlyEarnings || 0).toFixed(2)}</td><td className="p-4"><span className={`rounded-full px-3 py-1 text-xs ${paid ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-200'}`}>{paid ? 'تسویه‌شده' : 'در انتظار پرداخت'}</span></td><td className="p-4"><button type="button" disabled={paid || busy === artist.id} onClick={() => settle(artist)} className="rounded-lg bg-indigo-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-40">{busy === artist.id ? 'در حال ثبت...' : paid ? 'تسویه ثبت شده' : 'تأیید تسویه حساب'}</button></td></tr>;
               })}</tbody>
             </table>
           </section>
@@ -216,14 +241,22 @@ export default function AdminDashboardPage() {
       )}
 
       {tab === 'system' && admin && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <form onSubmit={savePrices} className="space-y-5 rounded-3xl border border-white/10 bg-white/5 p-6">
-            <div><h2 className="text-xl font-bold">کنترل قیمت اشتراک‌ها</h2><p className="mt-1 text-sm text-slate-400">قیمت‌ها به‌صورت پویا در داده‌های ماک ذخیره می‌شوند.</p></div>
-            <label className="block text-sm text-slate-300">اشتراک نقره‌ای ($)<input required type="number" min="0.01" step="0.01" value={prices.silver} onChange={(e) => setPrices({ ...prices, silver: e.target.value })} className={control} /></label>
-            <label className="block text-sm text-slate-300">اشتراک طلایی ($)<input required type="number" min="0.01" step="0.01" value={prices.gold} onChange={(e) => setPrices({ ...prices, gold: e.target.value })} className={control} /></label>
-            <button disabled={busy === 'prices'} className="w-full rounded-xl bg-indigo-400 py-3 font-bold text-slate-950 disabled:opacity-50">به‌روزرسانی قیمت‌ها</button>
-          </form>
-          <Chart distribution={distribution} />
+        <div className="space-y-6">
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Money label={`درآمد اشتراک‌ها در ${financial?.month || 'ماه جاری'}`} value={financial?.subscriptionRevenue} />
+            <Money label="فروش اشتراک نقره‌ای" value={financial?.subscriptionRevenueByPlan?.silver} />
+            <Money label="فروش اشتراک طلایی" value={financial?.subscriptionRevenueByPlan?.gold} />
+            <Stat label="تعداد خریدهای ماه جاری" value={number(financial?.subscriptionSalesCount)} color="text-indigo-300" />
+          </section>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <form onSubmit={savePrices} className="space-y-5 rounded-3xl border border-white/10 bg-white/5 p-6">
+              <div><h2 className="text-xl font-bold">کنترل قیمت اشتراک‌ها</h2><p className="mt-1 text-sm text-slate-400">قیمت جدید بلافاصله در انتخاب طرح و صفحه پرداخت استفاده می‌شود.</p></div>
+              <label className="block text-sm text-slate-300">اشتراک نقره‌ای ($)<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={prices.silver} onChange={(e) => setPrices({ ...prices, silver: e.target.value })} className={control} /></label>
+              <label className="block text-sm text-slate-300">اشتراک طلایی ($)<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={prices.gold} onChange={(e) => setPrices({ ...prices, gold: e.target.value })} className={control} /></label>
+              <button disabled={busy === 'prices'} className="w-full rounded-xl bg-indigo-400 py-3 font-bold text-slate-950 disabled:opacity-50">{busy === 'prices' ? 'در حال به‌روزرسانی...' : 'به‌روزرسانی قیمت‌ها'}</button>
+            </form>
+            <Chart distribution={distribution} />
+          </div>
         </div>
       )}
 
@@ -238,10 +271,12 @@ export default function AdminDashboardPage() {
       </Modal>}
 
       {selectedTicket && <Modal title={selectedTicket.subject} close={() => setSelectedTicket(null)}>
-        <div className="max-h-[65vh] space-y-4 overflow-y-auto"><Message text={selectedTicket.message} at={selectedTicket.createdAt} />{(selectedTicket.replies || []).map((item) => <Message key={item.id} text={item.message} at={item.createdAt} reply />)}
+        <div className="max-h-[65vh] space-y-4 overflow-y-auto"><div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>شناسه: {selectedTicket.id}</span><span>{selectedTicket.user?.displayName || selectedTicket.user?.username}</span><TicketStatus status={selectedTicket.status} /></div><Message text={selectedTicket.message} at={selectedTicket.createdAt} author="کاربر" />{(selectedTicket.replies || []).map((item) => <Message key={item.id} text={item.message} at={item.createdAt} author={item.senderRole === USER_ROLES.ADMIN ? 'مدیر سامانه' : 'پشتیبانی'} reply />)}
           {selectedTicket.status !== 'closed' ? <form onSubmit={sendReply} className="space-y-3"><textarea required rows="3" value={reply} onChange={(e) => setReply(e.target.value)} className={control} placeholder="پاسخ پشتیبان..." /><div className="flex gap-2"><button disabled={busy === selectedTicket.id} className="flex-1 rounded-xl bg-indigo-400 py-3 font-bold text-slate-950">ارسال پاسخ</button><button type="button" onClick={closeSelectedTicket} className="rounded-xl bg-white/10 px-4">بستن تیکت</button></div></form> : <p className="rounded-xl bg-slate-500/10 p-3 text-center text-sm text-slate-400">این تیکت بسته شده است.</p>}
         </div>
       </Modal>}
+        </main>
+      </div>
     </div>
   );
 }
@@ -251,7 +286,12 @@ function Money({ label, value }) { return <article className="rounded-2xl border
 function Panel({ title, children }) { return <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/5"><h2 className="border-b border-white/10 p-5 text-xl font-bold">{title}</h2>{children}</section>; }
 function Empty({ text }) { return <div className="p-12 text-center text-slate-400"><div className="text-4xl">✓</div><p className="mt-3">{text}</p></div>; }
 function Info({ label, value }) { return <div className="rounded-xl bg-white/5 p-3"><span className="text-slate-500">{label}</span><strong className="mt-1 block">{value}</strong></div>; }
-function Message({ text, at, reply: isReply }) { return <div className={`rounded-2xl p-4 ${isReply ? 'mr-6 bg-indigo-500/10' : 'bg-white/5'}`}><p className="text-sm leading-7">{text}</p><time className="mt-2 block text-xs text-slate-500">{date(at)}</time></div>; }
+function Message({ text, at, author, reply: isReply }) { return <div className={`rounded-2xl p-4 ${isReply ? 'mr-6 bg-indigo-500/10' : 'ml-6 bg-white/5'}`}><p className="mb-1 text-xs font-bold text-indigo-300">{author}</p><p className="text-sm leading-7">{text}</p><time className="mt-2 block text-xs text-slate-500">{date(at)}</time></div>; }
+function TicketStatus({ status }) {
+  const labels = { open: 'باز', answered: 'پاسخ داده‌شده', closed: 'بسته' };
+  const colors = { open: 'bg-emerald-500/10 text-emerald-300', answered: 'bg-indigo-500/10 text-indigo-300', closed: 'bg-slate-500/10 text-slate-400' };
+  return <span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs ${colors[status] || colors.open}`}>{labels[status] || labels.open}</span>;
+}
 function AccessDenied() { return <div className="mx-auto max-w-xl p-6 text-center"><div className="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-8"><h1 className="text-2xl font-bold">دسترسی غیرمجاز</h1><p className="mt-2 text-slate-300">این داشبورد ویژه پشتیبانان و مدیر سامانه است.</p><Link href="/" className="mt-5 inline-block rounded-xl bg-emerald-500 px-5 py-2 font-semibold text-slate-950">بازگشت</Link></div></div>; }
 
 function Modal({ title, close, children }) {

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useUser } from '@/contexts/UserContext';
 import { followUser, getUserById, unfollowUser, updateUser, uploadAvatar } from '@/lib/mockApi';
-import { SUBSCRIPTION_LIMITS, SUBSCRIPTION_TYPES as SUBSCRIPTIONS, USER_ROLES as ROLES } from '@/utils/constants';
+import { DEFAULT_AVATAR, SUBSCRIPTION_LIMITS, SUBSCRIPTION_TYPES as SUBSCRIPTIONS, USER_ROLES as ROLES } from '@/utils/constants';
 
 const subscriptionLabels = {
   [SUBSCRIPTIONS.FREE]: 'پایه',
@@ -59,7 +59,7 @@ function StatCard({ label, value }) {
 export default function ProfilePage() {
   const params = useParams();
   const router = useRouter();
-  const { user: currentUser } = useUser();
+  const { user: currentUser, refreshUser } = useUser();
   const fileInputRef = useRef(null);
   const userId = params?.id;
 
@@ -127,6 +127,7 @@ export default function ProfilePage() {
     const result = isFollowing ? await unfollowUser(currentUser.id, userId) : await followUser(currentUser.id, userId);
 
     if (result.success) {
+      await refreshUser();
       setIsFollowing((previous) => !previous);
       setProfileUser((previous) => {
         if (!previous) {
@@ -190,6 +191,7 @@ export default function ProfilePage() {
     const result = await updateUser(userId, updates);
 
     if (result.success) {
+      await refreshUser();
       setProfileUser(result.data);
       setNotice('اطلاعات پروفایل ذخیره شد');
       setIsEditing(false);
@@ -220,6 +222,7 @@ export default function ProfilePage() {
     const result = await uploadAvatar(userId, file);
 
     if (result.success) {
+      await refreshUser();
       setProfileUser(result.data);
       setNotice('عکس پروفایل به‌روزرسانی شد');
     } else {
@@ -263,13 +266,14 @@ export default function ProfilePage() {
             <div className="flex flex-col items-center gap-5 text-center sm:flex-row sm:text-right">
               <div className="relative shrink-0">
                 <div className="h-32 w-32 overflow-hidden rounded-full border-4 border-emerald-300/50 bg-slate-800">
-                  {profileUser.avatar ? (
-                    <img src={profileUser.avatar} alt={profileUser.displayName} className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-emerald-400 to-cyan-500 text-4xl font-black text-slate-950">
-                      {profileUser.displayName?.[0]?.toUpperCase() || 'U'}
-                    </div>
-                  )}
+                  <img
+                    src={profileUser.avatar || DEFAULT_AVATAR}
+                    alt={profileUser.displayName}
+                    onError={(event) => {
+                      event.currentTarget.src = DEFAULT_AVATAR;
+                    }}
+                    className="h-full w-full object-cover"
+                  />
                 </div>
 
                 {isOwnProfile && (

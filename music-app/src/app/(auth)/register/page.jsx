@@ -4,9 +4,11 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { registerUser } from '@/lib/mockApi';
+import { useUser } from '@/contexts/UserContext';
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { login } = useUser();
   const [formData, setFormData] = useState({
     displayName: '',
     email: '',
@@ -80,7 +82,14 @@ export default function RegisterPage() {
       });
 
       if (result.success) {
-        router.push('/login?registered=true');
+        const loginResult = await login(formData.email, formData.password);
+
+        if (loginResult.success) {
+          router.replace('/');
+          return;
+        }
+
+        setServerError(loginResult.error?.message || 'حساب ساخته شد، اما ورود خودکار انجام نشد');
         return;
       }
 

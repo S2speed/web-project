@@ -115,7 +115,7 @@ export default function ArtistRegisterPage() {
         bio: formData.bio,
         genre: formData.genre,
         genres: [formData.genre],
-        portfolioFile: formData.portfolio?.name || null,
+        portfolioFile: formData.portfolio,
       });
 
       if (result.success) {

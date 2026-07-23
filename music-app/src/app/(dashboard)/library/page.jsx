@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { usePlayer } from '@/contexts/PlayerContext';
 import { useUser } from '@/contexts/UserContext';
 import {
@@ -13,7 +14,7 @@ import {
   getUserPlaylists,
   removeSongFromPlaylist,
 } from '@/lib/mockApi';
-import { LIBRARY_SORT_OPTIONS } from '@/utils/constants';
+import { DEFAULT_COVER, LIBRARY_SORT_OPTIONS } from '@/utils/constants';
 import { buildLibraryAlbums, filterAndSortAlbums, filterAndSortSingles, getArtistName } from '@/utils/library';
 
 function formatNumber(value) {
@@ -21,14 +22,26 @@ function formatNumber(value) {
 }
 
 function CoverImage({ src, alt, className = '' }) {
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
   return (
     <div className={`overflow-hidden bg-white/10 ${className}`}>
-      {src ? <img src={src} alt={alt} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-2xl text-slate-500">♪</div>}
+      <img
+        src={hasError ? DEFAULT_COVER : src || DEFAULT_COVER}
+        alt={alt}
+        onError={() => setHasError(true)}
+        className="h-full w-full object-cover"
+      />
     </div>
   );
 }
 
 export default function LibraryPage() {
+  const router = useRouter();
   const { user, isLoading } = useUser();
   const { playSong } = usePlayer();
   const [songs, setSongs] = useState([]);
@@ -173,7 +186,7 @@ export default function LibraryPage() {
                 <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/40">
                   {selectedAlbum.songs.length ? (
                     selectedAlbum.songs.map((song) => (
-                      <TrackRow key={song.id} song={song} playlists={playlists} openMenuSongId={openMenuSongId} setOpenMenuSongId={setOpenMenuSongId} onPlay={playSong} onPlaylistToggle={handlePlaylistToggle} />
+                      <TrackRow key={song.id} song={song} queue={selectedAlbum.songs} playlists={playlists} openMenuSongId={openMenuSongId} setOpenMenuSongId={setOpenMenuSongId} onPlay={playSong} onPlaylistToggle={handlePlaylistToggle} />
                     ))
                   ) : (
                     <div className="p-6 text-center text-slate-300">برای این آلبوم آهنگی ثبت نشده است.</div>
@@ -191,11 +204,19 @@ export default function LibraryPage() {
               {filteredAlbums.length ? (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   {filteredAlbums.map((album) => (
-                    <article key={album.id} className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 transition hover:bg-white/[0.06]">
-                      <button type="button" onClick={() => setSelectedAlbumId(album.id)} className="block w-full text-right">
+                    <article
+                      key={album.id}
+                      onClick={(event) => {
+                        if (!event.target.closest('a, button')) {
+                          router.push(`/album/${album.id}`);
+                        }
+                      }}
+                      className="cursor-pointer rounded-3xl border border-white/10 bg-white/[0.03] p-4 transition hover:bg-white/[0.06]"
+                    >
+                      <Link href={`/album/${album.id}`} className="block w-full text-right">
                         <CoverImage src={album.cover} alt={album.title} className="mb-4 aspect-square rounded-2xl" />
                         <h3 className="truncate text-lg font-bold">{album.title}</h3>
-                      </button>
+                      </Link>
                       <Link href={`/artist/${album.artistId}`} className="mt-1 inline-block truncate text-sm text-violet-200 hover:text-white">
                         {getArtistName(album.artist)}
                       </Link>
@@ -220,7 +241,7 @@ export default function LibraryPage() {
               {filteredSingles.length ? (
                 <div className="overflow-visible rounded-3xl border border-white/10 bg-white/[0.03]">
                   {filteredSingles.map((song) => (
-                    <TrackRow key={song.id} song={song} playlists={playlists} openMenuSongId={openMenuSongId} setOpenMenuSongId={setOpenMenuSongId} onPlay={playSong} onPlaylistToggle={handlePlaylistToggle} />
+                    <TrackRow key={song.id} song={song} queue={filteredSingles} playlists={playlists} openMenuSongId={openMenuSongId} setOpenMenuSongId={setOpenMenuSongId} onPlay={playSong} onPlaylistToggle={handlePlaylistToggle} />
                   ))}
                 </div>
               ) : (
@@ -234,27 +255,34 @@ export default function LibraryPage() {
   );
 }
 
-function TrackRow({ song, playlists, openMenuSongId, setOpenMenuSongId, onPlay, onPlaylistToggle }) {
+function TrackRow({ song, queue, playlists, openMenuSongId, setOpenMenuSongId, onPlay, onPlaylistToggle }) {
   const isMenuOpen = openMenuSongId === song.id;
 
   return (
-    <div className="relative flex items-center gap-3 border-b border-white/10 p-4 last:border-b-0">
-      <button type="button" onClick={() => onPlay(song)} className="shrink-0">
+    <div
+      onClick={(event) => {
+        if (!event.target.closest('a, button')) {
+          onPlay(song, queue);
+        }
+      }}
+      className="relative flex cursor-pointer items-center gap-3 border-b border-white/10 p-4 transition hover:bg-white/[0.03] last:border-b-0"
+    >
+      <button type="button" onClick={() => onPlay(song, queue)} className="shrink-0">
         <CoverImage src={song.cover} alt={song.title} className="h-14 w-14 rounded-xl" />
       </button>
       <div className="min-w-0 flex-1">
-        <button type="button" onClick={() => onPlay(song)} className="block max-w-full truncate text-right font-semibold text-white hover:text-violet-200">
+        <button type="button" onClick={() => onPlay(song, queue)} className="block max-w-full truncate text-right font-semibold text-white hover:text-violet-200">
           {song.title}
         </button>
         <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-sm text-slate-400">
           <Link href={`/artist/${song.artistId}`} className="hover:text-white">
             {getArtistName(song.artist)}
           </Link>
-          {song.album && <span>• {song.album.title}</span>}
+          {song.album && <Link href={`/album/${song.album.id}`} className="hover:text-white">• {song.album.title}</Link>}
           <span>• {formatNumber(song.listeners)} شنونده</span>
         </div>
       </div>
-      <button type="button" onClick={() => onPlay(song)} className="rounded-full bg-violet-300 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-violet-200">
+      <button type="button" onClick={() => onPlay(song, queue)} className="rounded-full bg-violet-300 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-violet-200">
         پخش
       </button>
       <div className="relative">
@@ -262,7 +290,7 @@ function TrackRow({ song, playlists, openMenuSongId, setOpenMenuSongId, onPlay, 
           پلی‌لیست
         </button>
         {isMenuOpen && (
-          <div className="absolute left-0 top-12 z-30 w-64 rounded-2xl border border-white/10 bg-slate-900 p-3 shadow-2xl shadow-black/40">
+          <div onClick={(event) => event.stopPropagation()} className="absolute left-0 top-12 z-30 w-64 rounded-2xl border border-white/10 bg-slate-900 p-3 shadow-2xl shadow-black/40">
             {playlists.length ? (
               <div className="space-y-2">
                 {playlists.map((playlist) => {
@@ -281,7 +309,12 @@ function TrackRow({ song, playlists, openMenuSongId, setOpenMenuSongId, onPlay, 
                 })}
               </div>
             ) : (
-              <p className="text-sm leading-6 text-slate-400">برای افزودن آهنگ، ابتدا یک پلی‌لیست بسازید.</p>
+              <div className="space-y-3">
+                <p className="text-sm leading-6 text-slate-400">برای افزودن آهنگ، ابتدا یک پلی‌لیست بسازید.</p>
+                <Link href="/playlists" className="block rounded-xl bg-violet-300 px-3 py-2 text-center text-sm font-bold text-slate-950 hover:bg-violet-200">
+                  ایجاد پلی‌لیست
+                </Link>
+              </div>
             )}
           </div>
         )}
