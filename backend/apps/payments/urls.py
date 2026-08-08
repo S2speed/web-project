@@ -1,0 +1,7 @@
+"""URLs for payments app."""
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('', views.ping, name='payments-ping'),
+]
