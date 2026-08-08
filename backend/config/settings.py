@@ -102,7 +102,8 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Custom User Model
-AUTH_USER_MODEL = 'apps.users.CustomUser'
+# Use the app label (not the full module path) for AUTH_USER_MODEL
+AUTH_USER_MODEL = 'users.CustomUser'
 
 # REST Framework settings
 REST_FRAMEWORK = {
