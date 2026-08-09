@@ -102,6 +102,9 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Ensure media directory exists in development
 import os
 os.makedirs(MEDIA_ROOT, exist_ok=True)
+# Ensure subfolders for songs and covers
+os.makedirs(os.path.join(MEDIA_ROOT, 'songs'), exist_ok=True)
+os.makedirs(os.path.join(MEDIA_ROOT, 'covers'), exist_ok=True)
 
 # Upload limits
 FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50 MB

@@ -1,6 +1,7 @@
 from rest_framework import serializers
-from .models import Artist, Album, Song
+from .models import Artist, Album, Song, Playlist
 from apps.users.models import CustomUser
+from django.db.models import Sum
 
 
 class AlbumBriefSerializer(serializers.ModelSerializer):
@@ -79,3 +80,283 @@ class VerifyArtistSerializer(serializers.Serializer):
 		if self.initial_data.get('status') == 'rejected' and not value:
 			raise serializers.ValidationError('Reason is required when rejecting')
 		return value
+
+
+class SongSerializer(serializers.ModelSerializer):
+	"""Full serializer for Song objects."""
+	artist_name = serializers.CharField(source='artist.stage_name', read_only=True)
+	album_title = serializers.CharField(source='album.title', read_only=True, allow_null=True)
+	duration_formatted = serializers.SerializerMethodField()
+	is_favorite = serializers.SerializerMethodField()
+
+	class Meta:
+		model = Song
+		fields = (
+			'id', 'title', 'artist', 'artist_name', 'album', 'album_title',
+			'cover', 'audio_file', 'lyrics', 'duration', 'duration_formatted',
+			'genre', 'release_date', 'is_single', 'play_count', 'listener_count',
+			'is_favorite', 'created_at', 'updated_at'
+		)
+		read_only_fields = ('id', 'artist', 'play_count', 'listener_count', 'created_at', 'updated_at')
+
+	def get_duration_formatted(self, obj):
+		minutes = obj.duration // 60
+		seconds = obj.duration % 60
+		return f"{minutes}:{seconds:02d}"
+
+	def get_is_favorite(self, obj):
+		request = self.context.get('request')
+		if request and getattr(request.user, 'is_authenticated', False):
+			return obj.playlists.filter(user=request.user).exists()
+		return False
+
+
+class SongCreateSerializer(serializers.ModelSerializer):
+	audio_file = serializers.FileField(required=True)
+	cover = serializers.ImageField(required=False)
+
+	class Meta:
+		model = Song
+		fields = (
+			'title', 'album', 'cover', 'audio_file', 'lyrics',
+			'duration', 'genre', 'release_date', 'is_single',
+			'featured_artists'
+		)
+
+	def validate(self, data):
+		request = self.context.get('request')
+		try:
+			artist = Artist.objects.get(user=request.user)
+		except Artist.DoesNotExist:
+			raise serializers.ValidationError('You are not an artist')
+
+		if not artist.is_verified:
+			raise serializers.ValidationError('Your artist account is not verified')
+
+		if data.get('album'):
+			album = data['album']
+			if album.artist != artist:
+				raise serializers.ValidationError({'album': 'This album does not belong to you'})
+
+		return data
+
+	def create(self, validated_data):
+		request = self.context.get('request')
+		artist = Artist.objects.get(user=request.user)
+		validated_data['artist'] = artist
+		return super().create(validated_data)
+
+
+class SongUpdateSerializer(serializers.ModelSerializer):
+	class Meta:
+		model = Song
+		fields = ('title', 'cover', 'lyrics', 'genre', 'is_single', 'featured_artists')
+
+	def validate(self, data):
+		request = self.context.get('request')
+		try:
+			artist = Artist.objects.get(user=request.user)
+		except Artist.DoesNotExist:
+			raise serializers.ValidationError('You are not an artist')
+
+		song = self.instance
+		if song.artist != artist:
+			raise serializers.ValidationError('You do not have permission to edit this song')
+
+		return data
+
+
+class AlbumSerializer(serializers.ModelSerializer):
+	"""Base serializer for Album."""
+	artist_name = serializers.CharField(source='artist.stage_name', read_only=True)
+	track_count = serializers.IntegerField(source='songs.count', read_only=True)
+	total_duration = serializers.SerializerMethodField()
+
+	class Meta:
+		model = Album
+		fields = (
+			'id', 'title', 'artist', 'artist_name', 'cover',
+			'release_date', 'genre', 'description', 'is_single',
+			'track_count', 'total_duration', 'created_at', 'updated_at'
+		)
+		read_only_fields = ('id', 'artist', 'created_at', 'updated_at')
+
+	def get_total_duration(self, obj):
+		total = obj.songs.aggregate(total=Sum('duration'))['total']
+		if total:
+			minutes = total // 60
+			seconds = total % 60
+			return f"{minutes}:{seconds:02d}"
+		return "0:00"
+
+
+class AlbumDetailSerializer(AlbumSerializer):
+	songs = SongSerializer(many=True, read_only=True)
+
+	class Meta(AlbumSerializer.Meta):
+		fields = AlbumSerializer.Meta.fields + ('songs',)
+
+
+class AlbumCreateSerializer(serializers.ModelSerializer):
+	cover = serializers.ImageField(required=False)
+
+	class Meta:
+		model = Album
+		fields = ('title', 'cover', 'release_date', 'genre', 'description', 'is_single')
+
+	def validate(self, data):
+		request = self.context.get('request')
+		try:
+			artist = Artist.objects.get(user=request.user)
+		except Artist.DoesNotExist:
+			raise serializers.ValidationError('You are not an artist')
+
+		if not artist.is_verified:
+			raise serializers.ValidationError('Your artist account is not verified')
+
+		return data
+
+	def create(self, validated_data):
+		request = self.context.get('request')
+		artist = Artist.objects.get(user=request.user)
+		validated_data['artist'] = artist
+		return super().create(validated_data)
+
+
+class AlbumUpdateSerializer(serializers.ModelSerializer):
+	class Meta:
+		model = Album
+		fields = ('title', 'cover', 'genre', 'description', 'is_single')
+
+	def validate(self, data):
+		request = self.context.get('request')
+		try:
+			artist = Artist.objects.get(user=request.user)
+		except Artist.DoesNotExist:
+			raise serializers.ValidationError('You are not an artist')
+
+		album = self.instance
+		if album.artist != artist:
+			raise serializers.ValidationError('You do not have permission to edit this album')
+
+		return data
+
+
+class AlbumAddSongSerializer(serializers.Serializer):
+	song_ids = serializers.ListField(child=serializers.IntegerField(), required=True)
+
+	def validate_song_ids(self, value):
+		request = self.context.get('request')
+		try:
+			artist = Artist.objects.get(user=request.user)
+		except Artist.DoesNotExist:
+			raise serializers.ValidationError('You are not an artist')
+
+		album = self.context.get('album')
+		songs = Song.objects.filter(id__in=value)
+		if songs.count() != len(value):
+			raise serializers.ValidationError('Some songs were not found')
+
+		for song in songs:
+			if song.artist != artist:
+				raise serializers.ValidationError(f'Song "{song.title}" does not belong to you')
+			if song.album and song.album != album:
+				raise serializers.ValidationError(f'Song "{song.title}" is already in another album')
+
+		return value
+
+
+class PlaylistSerializer(serializers.ModelSerializer):
+	"""Base serializer for Playlist."""
+	user_display_name = serializers.CharField(source='user.display_name', read_only=True)
+	track_count = serializers.IntegerField(source='songs.count', read_only=True)
+	total_duration = serializers.SerializerMethodField()
+	is_owner = serializers.SerializerMethodField()
+
+	class Meta:
+		model = Playlist
+		fields = (
+			'id', 'name', 'user', 'user_display_name', 'cover',
+			'description', 'is_public', 'track_count', 'total_duration',
+			'is_owner', 'created_at', 'updated_at'
+		)
+		read_only_fields = ('id', 'user', 'created_at', 'updated_at')
+
+	def get_total_duration(self, obj):
+		total = obj.songs.aggregate(total=Sum('duration'))['total']
+		if total:
+			minutes = total // 60
+			seconds = total % 60
+			return f"{minutes}:{seconds:02d}"
+		return "0:00"
+
+	def get_is_owner(self, obj):
+		request = self.context.get('request')
+		if request and getattr(request.user, 'is_authenticated', False):
+			return obj.user == request.user
+		return False
+
+
+class PlaylistDetailSerializer(PlaylistSerializer):
+	songs = SongSerializer(many=True, read_only=True)
+
+	class Meta(PlaylistSerializer.Meta):
+		fields = PlaylistSerializer.Meta.fields + ('songs',)
+
+
+class PlaylistCreateSerializer(serializers.ModelSerializer):
+	class Meta:
+		model = Playlist
+		fields = ('name', 'description', 'is_public', 'cover')
+
+	def validate(self, data):
+		request = self.context.get('request')
+		user = request.user
+		max_playlists = getattr(user, 'subscription_limit', {}).get('max_playlists')
+		if max_playlists is not None:
+			current_count = Playlist.objects.filter(user=user).count()
+			if current_count >= max_playlists:
+				raise serializers.ValidationError(
+					f'You reached the maximum allowed playlists ({max_playlists}). Upgrade to create more.'
+				)
+		return data
+
+	def create(self, validated_data):
+		request = self.context.get('request')
+		validated_data['user'] = request.user
+		return super().create(validated_data)
+
+
+class PlaylistUpdateSerializer(serializers.ModelSerializer):
+	class Meta:
+		model = Playlist
+		fields = ('name', 'description', 'is_public', 'cover')
+
+	def validate(self, data):
+		request = self.context.get('request')
+		playlist = self.instance
+		if playlist.user != request.user:
+			raise serializers.ValidationError('You do not have permission to edit this playlist')
+		return data
+
+
+class PlaylistAddSongSerializer(serializers.Serializer):
+	song_id = serializers.IntegerField(required=True)
+
+	def validate_song_id(self, value):
+		if not Song.objects.filter(id=value).exists():
+			raise serializers.ValidationError('Song not found')
+		return value
+
+	def validate(self, data):
+		request = self.context.get('request')
+		playlist = self.context.get('playlist')
+		song_id = data.get('song_id')
+
+		if playlist.user != request.user:
+			raise serializers.ValidationError('You do not have permission to edit this playlist')
+
+		if playlist.songs.filter(id=song_id).exists():
+			raise serializers.ValidationError('This song is already in the playlist')
+
+		return data
