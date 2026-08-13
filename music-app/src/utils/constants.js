@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   PLAYLISTS: "musicApp_playlists",
   NOTIFICATIONS: "musicApp_notifications",
   CURRENT_USER: "musicApp_currentUser",
+  PLAYER_STATE: "musicApp_playerState",
   SEED_VERSION: "musicApp_seedVersion",
 };
 
@@ -38,12 +39,15 @@ export const PLAYLIST_LIMITS = {
 export const SUBSCRIPTION_LIMITS = {
   [SUBSCRIPTION_TYPES.FREE]: {
     canUploadAvatar: false,
+    maxDailyStreams: 60,
   },
   [SUBSCRIPTION_TYPES.SILVER]: {
     canUploadAvatar: true,
+    maxDailyStreams: Infinity,
   },
   [SUBSCRIPTION_TYPES.GOLD]: {
     canUploadAvatar: true,
+    maxDailyStreams: Infinity,
   },
 };
 

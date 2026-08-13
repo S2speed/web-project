@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.core.validators import MinValueValidator
 from django.utils import timezone
 
 
@@ -125,7 +126,12 @@ class Playlist(models.Model):
 
     name = models.CharField(max_length=100)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='playlists')
-    songs = models.ManyToManyField(Song, related_name='playlists', blank=True)
+    songs = models.ManyToManyField(
+        Song,
+        related_name='playlists',
+        blank=True,
+        through='PlaylistTrack',
+    )
     is_public = models.BooleanField(default=True)
     cover = models.ImageField(upload_to='covers/playlists/', null=True, blank=True)
     description = models.TextField(blank=True)
@@ -158,3 +164,112 @@ class Playlist(models.Model):
         if max_playlists is None:
             return True
         return user.playlists.count() < max_playlists
+
+
+class PlaylistTrack(models.Model):
+    """A song inside a playlist with a stable, user-controlled order."""
+
+    playlist = models.ForeignKey(Playlist, on_delete=models.CASCADE, related_name='tracks')
+    song = models.ForeignKey(Song, on_delete=models.CASCADE, related_name='playlist_tracks')
+    position = models.PositiveIntegerField(validators=[MinValueValidator(0)])
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['position', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['playlist', 'song'], name='unique_song_per_playlist'),
+            models.UniqueConstraint(fields=['playlist', 'position'], name='unique_playlist_track_position'),
+        ]
+
+    def __str__(self):
+        return f'{self.playlist.name}: {self.song.title} ({self.position})'
+
+
+class PlaybackQueue(models.Model):
+    """Server-side playback state, synchronized for each signed-in user."""
+
+    REPEAT_NONE = 'none'
+    REPEAT_ALL = 'all'
+    REPEAT_ONE = 'one'
+    REPEAT_CHOICES = (
+        (REPEAT_NONE, 'none'),
+        (REPEAT_ALL, 'all'),
+        (REPEAT_ONE, 'one'),
+    )
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='playback_queue',
+    )
+    current_index = models.PositiveIntegerField(default=0)
+    repeat_mode = models.CharField(max_length=8, choices=REPEAT_CHOICES, default=REPEAT_NONE)
+    shuffle = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'playback queue'
+        verbose_name_plural = 'playback queues'
+
+    def __str__(self):
+        return f'Queue for {self.user}'
+
+
+class QueueItem(models.Model):
+    """An ordered item in a user's playback queue."""
+
+    queue = models.ForeignKey(PlaybackQueue, on_delete=models.CASCADE, related_name='items')
+    song = models.ForeignKey(Song, on_delete=models.CASCADE, related_name='queue_items')
+    position = models.PositiveIntegerField(validators=[MinValueValidator(0)])
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['position', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['queue', 'position'], name='unique_queue_item_position'),
+        ]
+
+    def __str__(self):
+        return f'{self.queue.user}: {self.song.title} ({self.position})'
+
+
+class StreamEvent(models.Model):
+    """An immutable playback event used for limits and aggregated statistics."""
+
+    SOURCE_DIRECT = 'direct'
+    SOURCE_ALBUM = 'album'
+    SOURCE_PLAYLIST = 'playlist'
+    SOURCE_QUEUE = 'queue'
+    SOURCE_CHOICES = (
+        (SOURCE_DIRECT, 'direct'),
+        (SOURCE_ALBUM, 'album'),
+        (SOURCE_PLAYLIST, 'playlist'),
+        (SOURCE_QUEUE, 'queue'),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='stream_events',
+    )
+    song = models.ForeignKey(Song, on_delete=models.CASCADE, related_name='stream_events')
+    source = models.CharField(max_length=12, choices=SOURCE_CHOICES, default=SOURCE_DIRECT)
+    idempotency_key = models.CharField(max_length=64, blank=True)
+    played_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ['-played_at', '-id']
+        indexes = [
+            models.Index(fields=['user', 'played_at'], name='stream_user_played_idx'),
+            models.Index(fields=['song', 'played_at'], name='stream_song_played_idx'),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'idempotency_key'],
+                condition=~models.Q(idempotency_key=''),
+                name='unique_user_stream_idempotency_key',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user} streamed {self.song}'

@@ -44,4 +44,41 @@ describe('player reducer', () => {
     state = playerReducer(state, { type: 'TOGGLE_SHUFFLE' });
     expect(state.isShuffle).toBe(true);
   });
+
+  test('moves and removes upcoming queue items without losing the current song', () => {
+    const thirdSong = { id: 'song-c', title: 'Third' };
+    let state = {
+      ...PLAYER_INITIAL_STATE,
+      queue: [...songs, thirdSong],
+      currentSong: songs[0],
+      currentIndex: 0,
+    };
+    state = playerReducer(state, { type: 'MOVE_QUEUE_ITEM', fromIndex: 2, toIndex: 1 });
+    expect(state.queue.map((song) => song.id)).toEqual(['song-a', 'song-c', 'song-b']);
+    state = playerReducer(state, { type: 'REMOVE_QUEUE_ITEM', index: 1 });
+    expect(state.queue.map((song) => song.id)).toEqual(['song-a', 'song-b']);
+    expect(state.currentSong).toBe(songs[0]);
+  });
+
+  test('clears only upcoming items and keeps playback history in the queue', () => {
+    const thirdSong = { id: 'song-c', title: 'Third' };
+    const state = playerReducer({
+      ...PLAYER_INITIAL_STATE,
+      queue: [...songs, thirdSong],
+      currentSong: songs[1],
+      currentIndex: 1,
+    }, { type: 'CLEAR_UPCOMING' });
+    expect(state.queue.map((song) => song.id)).toEqual(['song-a', 'song-b']);
+    expect(state.currentIndex).toBe(1);
+  });
+
+  test('registers a new stream when playback advances', () => {
+    let state = playerReducer(PLAYER_INITIAL_STATE, {
+      type: 'PLAY_SONG', payload: songs[0], queue: songs, index: 0,
+    });
+    expect(state.streamNonce).toBe(1);
+    state = playerReducer(state, { type: 'NEXT' });
+    expect(state.streamNonce).toBe(2);
+    expect(state.currentSong).toBe(songs[1]);
+  });
 });

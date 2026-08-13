@@ -1259,6 +1259,28 @@ export async function incrementPlayCount(songId) {
   await delay(100, 220);
 
   try {
+    const currentUser = getCurrentUserRecord();
+    const playedAt = new Date().toISOString();
+    const streamEvents = getStreamEvents();
+    const isKnownListener = Boolean(currentUser) && streamEvents.some(
+      (event) => event.userId === currentUser.id && event.songId === songId,
+    );
+    const dailyLimit = currentUser
+      ? SUBSCRIPTION_LIMITS[currentUser.subscription]?.maxDailyStreams
+      : Infinity;
+    const streamsToday = currentUser
+      ? streamEvents.filter(
+          (event) => event.userId === currentUser.id && event.playedAt?.slice(0, 10) === playedAt.slice(0, 10),
+        ).length
+      : 0;
+
+    if (Number.isFinite(dailyLimit) && streamsToday >= dailyLimit) {
+      return errorResponse(
+        `سقف ${dailyLimit.toLocaleString("fa-IR")} استریم روزانه حساب پایه تکمیل شده است`,
+        403,
+      );
+    }
+
     const songs = getSongs();
     const songIndex = songs.findIndex((song) => song.id === songId);
 
@@ -1266,23 +1288,10 @@ export async function incrementPlayCount(songId) {
       return errorResponse("آهنگ پیدا نشد", 404);
     }
 
-    songs[songIndex] = {
-      ...songs[songIndex],
-      playCount: (Number(songs[songIndex].playCount) || 0) + 1,
-      monthlyPlayCount: (Number(songs[songIndex].monthlyPlayCount) || 0) + 1,
-      listeners: Math.max(Number(songs[songIndex].listeners) || 0, 1),
-      updatedAt: new Date().toISOString(),
-    };
-
-    saveSongs(songs);
-
-    const currentUser = getCurrentUserRecord();
-    const playedAt = new Date().toISOString();
     const history = getPlayHistory();
     history.unshift({ id: generateId("play"), userId: currentUser?.id || null, songId, playedAt });
     savePlayHistory(history.slice(0, 500));
 
-    const streamEvents = getStreamEvents();
     streamEvents.push({
       id: generateId("stream"),
       userId: currentUser?.id || null,
@@ -1292,6 +1301,28 @@ export async function incrementPlayCount(songId) {
       month: playedAt.slice(0, 7),
     });
     saveStreamEvents(streamEvents.slice(-5000));
+
+    songs[songIndex] = {
+      ...songs[songIndex],
+      playCount: (Number(songs[songIndex].playCount) || 0) + 1,
+      monthlyPlayCount: (Number(songs[songIndex].monthlyPlayCount) || 0) + 1,
+      listeners: (Number(songs[songIndex].listeners) || 0) + (currentUser && !isKnownListener ? 1 : 0),
+      updatedAt: playedAt,
+    };
+    saveSongs(songs);
+
+    if (currentUser) {
+      const users = getUsers();
+      const currentUserIndex = users.findIndex((user) => user.id === currentUser.id);
+      if (currentUserIndex !== -1) {
+        users[currentUserIndex] = {
+          ...users[currentUserIndex],
+          dailyStreams: streamsToday + 1,
+          updatedAt: playedAt,
+        };
+        saveUsers(users);
+      }
+    }
 
     const artistProfile = getArtistProfileById(songs[songIndex].artistId);
     if (artistProfile) {

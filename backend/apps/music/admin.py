@@ -1,5 +1,8 @@
 from django.contrib import admin
-from .models import Artist, Album, Song, Playlist
+from .models import (
+	Artist, Album, Song, Playlist, PlaylistTrack,
+	PlaybackQueue, QueueItem, StreamEvent,
+)
 from apps.users.models import CustomUser
 
 
@@ -72,3 +75,33 @@ class PlaylistAdmin(admin.ModelAdmin):
 	search_fields = ('name', 'user__display_name', 'user__email')
 	ordering = ('-created_at',)
 	readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(PlaylistTrack)
+class PlaylistTrackAdmin(admin.ModelAdmin):
+	list_display = ('playlist', 'song', 'position', 'added_at')
+	list_filter = ('added_at',)
+	search_fields = ('playlist__name', 'song__title')
+	ordering = ('playlist', 'position')
+
+
+@admin.register(PlaybackQueue)
+class PlaybackQueueAdmin(admin.ModelAdmin):
+	list_display = ('user', 'current_index', 'repeat_mode', 'shuffle', 'updated_at')
+	search_fields = ('user__email', 'user__display_name')
+	list_filter = ('repeat_mode', 'shuffle')
+
+
+@admin.register(QueueItem)
+class QueueItemAdmin(admin.ModelAdmin):
+	list_display = ('queue', 'song', 'position', 'added_at')
+	ordering = ('queue', 'position')
+
+
+@admin.register(StreamEvent)
+class StreamEventAdmin(admin.ModelAdmin):
+	list_display = ('user', 'song', 'source', 'played_at')
+	list_filter = ('source', 'played_at')
+	search_fields = ('user__email', 'song__title', 'idempotency_key')
+	date_hierarchy = 'played_at'
+	readonly_fields = ('user', 'song', 'source', 'idempotency_key', 'played_at')

@@ -10,7 +10,9 @@ from .views import (
     AlbumAddSongsView, AlbumRemoveSongView
     ,PlaylistListView, PlaylistDetailView, PlaylistCreateView,
     PlaylistUpdateView, PlaylistDeleteView, PlaylistAddSongView,
-    PlaylistRemoveSongView, PlaylistCheckLimitView
+    PlaylistRemoveSongView, PlaylistCheckLimitView, PlaylistReorderView,
+    PlaybackQueueView, QueueItemCreateView, QueueItemDeleteView,
+    QueueReorderView, MyStreamStatsView, SongStreamStatsView,
 )
 
 urlpatterns = [
@@ -27,6 +29,8 @@ urlpatterns = [
     path('songs/<int:song_id>/update/', SongUpdateView.as_view(), name='song_update'),
     path('songs/<int:song_id>/delete/', SongDeleteView.as_view(), name='song_delete'),
     path('songs/<int:song_id>/play/', IncrementPlayCountView.as_view(), name='song_play'),
+    path('songs/<int:song_id>/stats/', SongStreamStatsView.as_view(), name='song_stream_stats'),
+    path('streams/me/', MyStreamStatsView.as_view(), name='my_stream_stats'),
     
     # Albums
     path('albums/', AlbumListView.as_view(), name='album_list'),
@@ -45,5 +49,12 @@ urlpatterns = [
     path('playlists/<int:playlist_id>/delete/', PlaylistDeleteView.as_view(), name='playlist_delete'),
     path('playlists/<int:playlist_id>/add-song/', PlaylistAddSongView.as_view(), name='playlist_add_song'),
     path('playlists/<int:playlist_id>/remove-song/<int:song_id>/', PlaylistRemoveSongView.as_view(), name='playlist_remove_song'),
+    path('playlists/<int:playlist_id>/reorder/', PlaylistReorderView.as_view(), name='playlist_reorder'),
     path('playlists/check-limit/', PlaylistCheckLimitView.as_view(), name='playlist_check_limit'),
+
+    # Playback queue
+    path('queue/', PlaybackQueueView.as_view(), name='playback_queue'),
+    path('queue/items/', QueueItemCreateView.as_view(), name='queue_item_create'),
+    path('queue/items/<int:item_id>/', QueueItemDeleteView.as_view(), name='queue_item_delete'),
+    path('queue/reorder/', QueueReorderView.as_view(), name='queue_reorder'),
 ]

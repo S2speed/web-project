@@ -1,6 +1,9 @@
 from rest_framework import serializers
-from .models import Artist, Album, Song, Playlist
+from .models import (
+	Artist, Album, Song, Playlist, PlaybackQueue, QueueItem, StreamEvent,
+)
 from apps.users.models import CustomUser
+from django.db import transaction
 from django.db.models import Sum
 
 
@@ -272,13 +275,14 @@ class PlaylistSerializer(serializers.ModelSerializer):
 	track_count = serializers.IntegerField(source='songs.count', read_only=True)
 	total_duration = serializers.SerializerMethodField()
 	is_owner = serializers.SerializerMethodField()
+	song_ids = serializers.SerializerMethodField()
 
 	class Meta:
 		model = Playlist
 		fields = (
 			'id', 'name', 'user', 'user_display_name', 'cover',
 			'description', 'is_public', 'track_count', 'total_duration',
-			'is_owner', 'created_at', 'updated_at'
+			'is_owner', 'song_ids', 'created_at', 'updated_at'
 		)
 		read_only_fields = ('id', 'user', 'created_at', 'updated_at')
 
@@ -296,12 +300,19 @@ class PlaylistSerializer(serializers.ModelSerializer):
 			return obj.user == request.user
 		return False
 
+	def get_song_ids(self, obj):
+		return list(obj.tracks.order_by('position', 'id').values_list('song_id', flat=True))
+
 
 class PlaylistDetailSerializer(PlaylistSerializer):
-	songs = SongSerializer(many=True, read_only=True)
+	songs = serializers.SerializerMethodField()
 
 	class Meta(PlaylistSerializer.Meta):
 		fields = PlaylistSerializer.Meta.fields + ('songs',)
+
+	def get_songs(self, obj):
+		songs = [track.song for track in obj.tracks.select_related('song__artist', 'song__album').order_by('position', 'id')]
+		return SongSerializer(songs, many=True, context=self.context).data
 
 
 class PlaylistCreateSerializer(serializers.ModelSerializer):
@@ -323,8 +334,15 @@ class PlaylistCreateSerializer(serializers.ModelSerializer):
 
 	def create(self, validated_data):
 		request = self.context.get('request')
-		validated_data['user'] = request.user
-		return super().create(validated_data)
+		with transaction.atomic():
+			user = CustomUser.objects.select_for_update().get(pk=request.user.pk)
+			max_playlists = user.subscription_limit.get('max_playlists')
+			if max_playlists is not None and Playlist.objects.filter(user=user).count() >= max_playlists:
+				raise serializers.ValidationError(
+					f'You reached the maximum allowed playlists ({max_playlists}). Upgrade to create more.'
+				)
+			validated_data['user'] = user
+			return super().create(validated_data)
 
 
 class PlaylistUpdateSerializer(serializers.ModelSerializer):
@@ -360,3 +378,53 @@ class PlaylistAddSongSerializer(serializers.Serializer):
 			raise serializers.ValidationError('This song is already in the playlist')
 
 		return data
+
+
+class PlaylistReorderSerializer(serializers.Serializer):
+	song_ids = serializers.ListField(
+		child=serializers.IntegerField(min_value=1),
+		allow_empty=True,
+	)
+
+
+class QueueItemSerializer(serializers.ModelSerializer):
+	song = SongSerializer(read_only=True)
+
+	class Meta:
+		model = QueueItem
+		fields = ('id', 'position', 'song', 'added_at')
+
+
+class PlaybackQueueSerializer(serializers.ModelSerializer):
+	items = QueueItemSerializer(many=True, read_only=True)
+
+	class Meta:
+		model = PlaybackQueue
+		fields = ('id', 'current_index', 'repeat_mode', 'shuffle', 'items', 'updated_at')
+
+
+class QueueReplaceSerializer(serializers.Serializer):
+	song_ids = serializers.ListField(
+		child=serializers.IntegerField(min_value=1),
+		allow_empty=True,
+	)
+	current_index = serializers.IntegerField(min_value=0, default=0)
+	repeat_mode = serializers.ChoiceField(choices=PlaybackQueue.REPEAT_CHOICES, default=PlaybackQueue.REPEAT_NONE)
+	shuffle = serializers.BooleanField(default=False)
+
+
+class QueueAddItemSerializer(serializers.Serializer):
+	song_id = serializers.PrimaryKeyRelatedField(queryset=Song.objects.all(), source='song')
+
+
+class QueueReorderSerializer(serializers.Serializer):
+	item_ids = serializers.ListField(
+		child=serializers.IntegerField(min_value=1),
+		allow_empty=True,
+	)
+	current_index = serializers.IntegerField(min_value=0, required=False)
+
+
+class StreamCreateSerializer(serializers.Serializer):
+	source = serializers.ChoiceField(choices=StreamEvent.SOURCE_CHOICES, default=StreamEvent.SOURCE_DIRECT)
+	idempotency_key = serializers.CharField(max_length=64, required=False, allow_blank=True, default='')

@@ -2,6 +2,7 @@ import {
   canCreatePlaylist,
   createPlaylist,
   deletePlaylist,
+  incrementPlayCount,
   login,
   registerUser,
   renamePlaylist,
@@ -128,5 +129,31 @@ describe('playlists', () => {
       },
     });
     expect(createResult).toMatchObject({ success: false, error: { code: 403 } });
+  });
+});
+
+describe('stream accounting', () => {
+  test('counts a signed-in listener only once while counting every stream', async () => {
+    await settle(login('listener1@musicapp.com', 'listener123'));
+    const before = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.SONGS)).find((song) => song.id === 'song_1');
+    const first = await settle(incrementPlayCount('song_1'));
+    const second = await settle(incrementPlayCount('song_1'));
+    const after = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.SONGS)).find((song) => song.id === 'song_1');
+    expect(first.success).toBe(true);
+    expect(second.success).toBe(true);
+    expect(after.playCount).toBe(before.playCount + 2);
+    expect(after.listeners).toBe(before.listeners + 1);
+  });
+
+  test('blocks the sixty-first daily stream for a free account', async () => {
+    await settle(login('listener1@musicapp.com', 'listener123'));
+    const playedAt = new Date().toISOString();
+    window.localStorage.setItem('musicApp_streamEvents', JSON.stringify(
+      Array.from({ length: 60 }, (_, index) => ({
+        id: `limit_${index}`, userId: 'user_4', songId: 'song_1', artistId: 'artist_1', playedAt,
+      })),
+    ));
+    const result = await settle(incrementPlayCount('song_1'));
+    expect(result).toMatchObject({ success: false, error: { code: 403 } });
   });
 });

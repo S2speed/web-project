@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef } from 'react';
 import { incrementPlayCount } from '@/lib/mockApi';
-import { PLAYER_REPEAT_MODES, PLAYER_REPEAT_SEQUENCE } from '@/utils/constants';
+import { PLAYER_REPEAT_MODES, PLAYER_REPEAT_SEQUENCE, STORAGE_KEYS } from '@/utils/constants';
 
 export const PLAYER_INITIAL_STATE = {
   currentSong: null,
@@ -15,7 +15,34 @@ export const PLAYER_INITIAL_STATE = {
   progress: 0,
   duration: 0,
   error: '',
+  streamNonce: 0,
 };
+
+function initializePlayerState(initialState) {
+  if (typeof window === 'undefined') return initialState;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.PLAYER_STATE) || 'null');
+    if (!saved || !Array.isArray(saved.queue)) return initialState;
+    const currentIndex = Math.min(
+      Math.max(Number(saved.currentIndex) || 0, 0),
+      Math.max(saved.queue.length - 1, 0),
+    );
+    return {
+      ...initialState,
+      queue: saved.queue,
+      currentIndex,
+      currentSong: saved.queue[currentIndex] || null,
+      volume: Number.isFinite(Number(saved.volume))
+        ? Math.min(Math.max(Number(saved.volume), 0), 1)
+        : initialState.volume,
+      repeatMode: PLAYER_REPEAT_SEQUENCE.includes(saved.repeatMode) ? saved.repeatMode : initialState.repeatMode,
+      isShuffle: Boolean(saved.isShuffle),
+      duration: Number(saved.queue[currentIndex]?.duration) || 0,
+    };
+  } catch {
+    return initialState;
+  }
+}
 
 export function playerReducer(state, action) {
   switch (action.type) {
@@ -29,6 +56,7 @@ export function playerReducer(state, action) {
         progress: 0,
         duration: Number(action.payload?.duration) || 0,
         error: '',
+        streamNonce: state.streamNonce + 1,
       };
     case 'TOGGLE_PLAY':
       return state.currentSong ? { ...state, isPlaying: !state.isPlaying } : state;
@@ -80,21 +108,28 @@ export function playerReducer(state, action) {
     case 'NEXT': {
       if (!state.queue.length) return state;
       if (state.repeatMode === PLAYER_REPEAT_MODES.ONE) {
-        return { ...state, progress: 0, isPlaying: true };
+        return { ...state, progress: 0, isPlaying: true, streamNonce: state.streamNonce + 1 };
       }
       const nextIndex = state.isShuffle
         ? Math.floor(Math.random() * state.queue.length)
         : state.currentIndex + 1;
       if (nextIndex >= state.queue.length) {
         if (state.repeatMode !== PLAYER_REPEAT_MODES.ALL) return { ...state, isPlaying: false };
-        return { ...state, currentIndex: 0, currentSong: state.queue[0], progress: 0, isPlaying: true };
+        return { ...state, currentIndex: 0, currentSong: state.queue[0], progress: 0, isPlaying: true, streamNonce: state.streamNonce + 1 };
       }
-      return { ...state, currentIndex: nextIndex, currentSong: state.queue[nextIndex], progress: 0, isPlaying: true };
+      return { ...state, currentIndex: nextIndex, currentSong: state.queue[nextIndex], progress: 0, isPlaying: true, streamNonce: state.streamNonce + 1 };
     }
     case 'PREVIOUS': {
       if (!state.queue.length) return state;
       const previousIndex = state.progress > 3 ? state.currentIndex : Math.max(state.currentIndex - 1, 0);
-      return { ...state, currentIndex: previousIndex, currentSong: state.queue[previousIndex], progress: 0, isPlaying: true };
+      return {
+        ...state,
+        currentIndex: previousIndex,
+        currentSong: state.queue[previousIndex],
+        progress: 0,
+        isPlaying: true,
+        streamNonce: state.streamNonce + 1,
+      };
     }
     case 'SET_PROGRESS':
       return { ...state, progress: action.payload };
@@ -145,7 +180,7 @@ function createDemoAudioUrl() {
 const PlayerContext = createContext(null);
 
 export function PlayerProvider({ children }) {
-  const [state, dispatch] = useReducer(playerReducer, PLAYER_INITIAL_STATE);
+  const [state, dispatch] = useReducer(playerReducer, PLAYER_INITIAL_STATE, initializePlayerState);
   const audioRef = useRef(null);
   const fallbackSongRef = useRef('');
   const fallbackUrlRef = useRef('');
@@ -155,20 +190,22 @@ export function PlayerProvider({ children }) {
     const queue = Array.isArray(songs) && songs.length ? songs : [song];
     const index = Math.max(queue.findIndex((item) => item.id === song.id), 0);
     dispatch({ type: 'PLAY_SONG', payload: song, queue, index });
-    incrementPlayCount(song.id);
   }, []);
 
   const next = useCallback(() => {
     if (state.repeatMode === PLAYER_REPEAT_MODES.ONE && audioRef.current) {
       audioRef.current.currentTime = 0;
-      dispatch({ type: 'SET_PROGRESS', payload: 0 });
+      dispatch({ type: 'NEXT' });
       audioRef.current.play().catch(() => dispatch({ type: 'SET_ERROR', payload: 'پخش دوباره آهنگ ممکن نشد.' }));
       return;
     }
 
     dispatch({ type: 'NEXT' });
   }, [state.repeatMode]);
-  const previous = useCallback(() => dispatch({ type: 'PREVIOUS' }), []);
+  const previous = useCallback(() => {
+    if (state.progress > 3 && audioRef.current) audioRef.current.currentTime = 0;
+    dispatch({ type: 'PREVIOUS' });
+  }, [state.progress]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -189,6 +226,33 @@ export function PlayerProvider({ children }) {
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = state.volume;
   }, [state.volume]);
+
+  useEffect(() => {
+    if (!state.currentSong || state.streamNonce === 0) return undefined;
+    let active = true;
+    incrementPlayCount(state.currentSong.id).then((result) => {
+      if (active && !result.success) {
+        dispatch({ type: 'SET_ERROR', payload: result.error?.message || 'ثبت استریم ممکن نشد.' });
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [state.streamNonce]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.PLAYER_STATE, JSON.stringify({
+        queue: state.queue,
+        currentIndex: state.currentIndex,
+        volume: state.volume,
+        repeatMode: state.repeatMode,
+        isShuffle: state.isShuffle,
+      }));
+    } catch {
+      // Playback remains functional when browser storage is unavailable.
+    }
+  }, [state.queue, state.currentIndex, state.volume, state.repeatMode, state.isShuffle]);
 
   useEffect(() => () => {
     if (fallbackUrlRef.current) URL.revokeObjectURL(fallbackUrlRef.current);

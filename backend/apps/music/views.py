@@ -1,31 +1,34 @@
-"""Music app API views (artists, albums, songs)."""
-from datetime import datetime
+"""Music app API views."""
+from datetime import datetime, timedelta
+
+from django.db.models import Count, Sum, Q
+from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from django_filters.rest_framework import DjangoFilterBackend
 
-from .models import Artist, Album, Song, Playlist
+from .models import Artist, Album, Song, Playlist, StreamEvent
 from .serializers import (
     ArtistSerializer, ArtistDetailSerializer, ArtistStatsSerializer,
     VerifyArtistSerializer, AlbumBriefSerializer, SongBriefSerializer,
     SongSerializer, SongCreateSerializer, SongUpdateSerializer,
     AlbumDetailSerializer, AlbumCreateSerializer, AlbumUpdateSerializer,
     AlbumAddSongSerializer, PlaylistSerializer, PlaylistDetailSerializer,
-    PlaylistCreateSerializer, PlaylistUpdateSerializer, PlaylistAddSongSerializer
+    PlaylistCreateSerializer, PlaylistUpdateSerializer, PlaylistAddSongSerializer,
+    PlaylistReorderSerializer, PlaybackQueueSerializer, QueueReplaceSerializer,
+    QueueAddItemSerializer, QueueReorderSerializer, StreamCreateSerializer,
+)
+from .services import (
+    add_playlist_track, add_queue_item, get_or_create_queue, record_stream,
+    remove_playlist_track, remove_queue_item, reorder_playlist_tracks,
+    reorder_queue, replace_queue,
 )
 from apps.users.permissions import IsAdminOrSupport
 from apps.support.models import Notification
 from apps.users.permissions import IsArtist
-from django.db.models import Sum, Q
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from .serializers import SongSerializer, SongCreateSerializer, SongUpdateSerializer
-from rest_framework import status
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from django.shortcuts import get_object_or_404
 
 
 class ArtistListView(APIView):
@@ -316,8 +319,11 @@ class PlaylistListView(APIView):
         if search:
             queryset = queryset.filter(name__icontains=search)
 
-        limit = int(request.query_params.get('limit', 20))
-        offset = int(request.query_params.get('offset', 0))
+        try:
+            limit = min(max(int(request.query_params.get('limit', 20)), 1), 100)
+            offset = max(int(request.query_params.get('offset', 0)), 0)
+        except ValueError:
+            return Response({'error': 'limit and offset must be integers'}, status=status.HTTP_400_BAD_REQUEST)
         count = queryset.count()
         queryset = queryset[offset:offset + limit]
 
@@ -351,7 +357,15 @@ class PlaylistUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def put(self, request, playlist_id):
+        return self._update(request, playlist_id)
+
+    def patch(self, request, playlist_id):
+        return self._update(request, playlist_id)
+
+    def _update(self, request, playlist_id):
         playlist = get_object_or_404(Playlist, id=playlist_id)
+        if playlist.user != request.user:
+            return Response({'error': 'You do not have permission to edit this playlist'}, status=status.HTTP_403_FORBIDDEN)
         serializer = PlaylistUpdateSerializer(playlist, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
@@ -375,27 +389,50 @@ class PlaylistAddSongView(APIView):
 
     def post(self, request, playlist_id):
         playlist = get_object_or_404(Playlist, id=playlist_id)
+        if playlist.user != request.user:
+            return Response({'error': 'You do not have permission to edit this playlist'}, status=status.HTTP_403_FORBIDDEN)
         serializer = PlaylistAddSongSerializer(data=request.data, context={'request': request, 'playlist': playlist})
         if serializer.is_valid():
             song_id = serializer.validated_data['song_id']
             song = Song.objects.get(id=song_id)
-            playlist.songs.add(song)
-            return Response({'message': f'Song "{song.title}" added to playlist', 'playlist': PlaylistDetailSerializer(playlist, context={'request': request}).data})
+            add_playlist_track(playlist, song)
+            return Response(
+                {
+                    'message': f'Song "{song.title}" added to playlist',
+                    'playlist': PlaylistDetailSerializer(playlist, context={'request': request}).data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class PlaylistRemoveSongView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, playlist_id, song_id):
+    def delete(self, request, playlist_id, song_id):
         playlist = get_object_or_404(Playlist, id=playlist_id)
         if playlist.user != request.user:
             return Response({'error': 'You do not have permission to edit this playlist'}, status=status.HTTP_403_FORBIDDEN)
         song = get_object_or_404(Song, id=song_id)
-        if not playlist.songs.filter(id=song_id).exists():
-            return Response({'error': 'This song is not in the playlist'}, status=status.HTTP_400_BAD_REQUEST)
-        playlist.songs.remove(song)
+        remove_playlist_track(playlist, song)
         return Response({'message': f'Song "{song.title}" removed from playlist', 'playlist': PlaylistDetailSerializer(playlist, context={'request': request}).data})
+
+    # Backward-compatible alias for the Phase 1 client.
+    def post(self, request, playlist_id, song_id):
+        return self.delete(request, playlist_id, song_id)
+
+
+class PlaylistReorderView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, playlist_id):
+        playlist = get_object_or_404(Playlist, id=playlist_id)
+        if playlist.user != request.user:
+            return Response({'error': 'You do not have permission to edit this playlist'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = PlaylistReorderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reorder_playlist_tracks(playlist, serializer.validated_data['song_ids'])
+        return Response(PlaylistDetailSerializer(playlist, context={'request': request}).data)
 
 
 class PlaylistCheckLimitView(APIView):
@@ -407,7 +444,68 @@ class PlaylistCheckLimitView(APIView):
         current_count = Playlist.objects.filter(user=user).count()
         can_create = max_playlists is None or current_count < max_playlists
         remaining = max_playlists - current_count if max_playlists is not None else None
-        return Response({'can_create': can_create, 'current_count': current_count, 'max_allowed': max_playlists, 'remaining': remaining})
+        return Response({
+            'can_create': can_create,
+            'allowed': can_create,
+            'current_count': current_count,
+            'max_allowed': max_playlists,
+            'limit': max_playlists,
+            'remaining': remaining,
+            'subscription': user.subscription,
+        })
+
+
+class PlaybackQueueView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        queue = get_or_create_queue(request.user)
+        return Response(PlaybackQueueSerializer(queue, context={'request': request}).data)
+
+    def put(self, request):
+        serializer = QueueReplaceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        queue = replace_queue(request.user, **serializer.validated_data)
+        return Response(PlaybackQueueSerializer(queue, context={'request': request}).data)
+
+    def delete(self, request):
+        queue = get_or_create_queue(request.user)
+        queue.items.all().delete()
+        queue.current_index = 0
+        queue.save(update_fields=['current_index', 'updated_at'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class QueueItemCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = QueueAddItemSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        item = add_queue_item(request.user, serializer.validated_data['song'])
+        queue = item.queue
+        return Response(
+            PlaybackQueueSerializer(queue, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class QueueItemDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, item_id):
+        queue = remove_queue_item(request.user, item_id)
+        return Response(PlaybackQueueSerializer(queue, context={'request': request}).data)
+
+
+class QueueReorderView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request):
+        serializer = QueueReorderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        queue = reorder_queue(request.user, **serializer.validated_data)
+        return Response(PlaybackQueueSerializer(queue, context={'request': request}).data)
 
 
 class SongListView(APIView):
@@ -521,12 +619,83 @@ class IncrementPlayCountView(APIView):
 
     def post(self, request, song_id):
         song = get_object_or_404(Song, id=song_id)
-        song.play_count = (song.play_count or 0) + 1
-        song.listener_count = (song.listener_count or 0) + 1
-        song.save()
+        serializer = StreamCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        event, created = record_stream(
+            user=request.user,
+            song=song,
+            **serializer.validated_data,
+        )
+        song.refresh_from_db(fields=['play_count', 'listener_count'])
+        today = timezone.localdate()
+        used_today = StreamEvent.objects.filter(user=request.user, played_at__date=today).count()
+        daily_limit = request.user.subscription_limit.get('max_daily_streams')
+        remaining = None if daily_limit is None else max(daily_limit - used_today, 0)
+        return Response(
+            {
+                'message': 'Stream recorded' if created else 'Stream was already recorded',
+                'created': created,
+                'event_id': event.id,
+                'play_count': song.play_count,
+                'listener_count': song.listener_count,
+                'daily': {
+                    'used': used_today,
+                    'limit': daily_limit,
+                    'remaining': remaining,
+                },
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
-        artist = song.artist
-        artist.total_streams = Song.objects.filter(artist=artist).aggregate(total=Sum('play_count'))['total'] or 0
-        artist.save()
 
-        return Response({'message': 'Play count incremented', 'play_count': song.play_count, 'listener_count': song.listener_count})
+class MyStreamStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        today = timezone.localdate()
+        queryset = StreamEvent.objects.filter(user=request.user)
+        used_today = queryset.filter(played_at__date=today).count()
+        daily_limit = request.user.subscription_limit.get('max_daily_streams')
+        return Response({
+            'today': used_today,
+            'total': queryset.count(),
+            'daily_limit': daily_limit,
+            'remaining_today': None if daily_limit is None else max(daily_limit - used_today, 0),
+            'subscription': request.user.subscription,
+        })
+
+
+class SongStreamStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, song_id):
+        song = get_object_or_404(Song.objects.select_related('artist__user'), id=song_id)
+        can_view = (
+            request.user.subscription == 'gold'
+            or request.user == song.artist.user
+            or request.user.role in ('admin', 'support')
+        )
+        if not can_view:
+            return Response(
+                {'error': 'A gold subscription is required to view song statistics.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        since = timezone.now() - timedelta(days=30)
+        recent = StreamEvent.objects.filter(song=song, played_at__gte=since)
+        by_day = list(
+            recent.annotate(day=TruncDate('played_at'))
+            .values('day')
+            .annotate(streams=Count('id'), listeners=Count('user_id', distinct=True))
+            .order_by('day')
+        )
+        return Response({
+            'song_id': song.id,
+            'play_count': song.play_count,
+            'listener_count': song.listener_count,
+            'last_30_days': {
+                'streams': recent.count(),
+                'listeners': recent.values('user_id').distinct().count(),
+                'by_day': by_day,
+            },
+        })
