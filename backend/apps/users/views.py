@@ -1,4 +1,6 @@
 """Authentication views for users app (JWT)."""
+from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -9,8 +11,10 @@ from rest_framework import status
 from .serializers import (
     LoginSerializer, UserSerializer,
     RegisterSerializer, RegisterArtistSerializer,
-    UserProfileSerializer, UserUpdateSerializer, FollowSerializer
+    UserProfileSerializer, UserUpdateSerializer, FollowSerializer,
+    AppSettingsSerializer, DeleteAccountSerializer,
 )
+from apps.support.services import get_user_settings, notify_users
 
 
 class LoginView(APIView):
@@ -89,6 +93,17 @@ class RegisterArtistView(APIView):
         serializer = RegisterArtistSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
+            staff_users = user.__class__.objects.filter(
+                Q(role__in=('admin', 'support')) | Q(is_superuser=True),
+            ).distinct()
+            notify_users(
+                staff_users,
+                type='verification',
+                title='New artist verification request',
+                message=f'{user.display_name} submitted a new artist application.',
+                link='/admin/dashboard',
+                dedupe_key=f'artist-application:{user.artist_profile.id}',
+            )
             return Response({
                 'message': 'Artist registration submitted and pending verification',
                 'user': {
@@ -189,3 +204,34 @@ class UserFollowingView(APIView):
         following = user.following.all()
         serializer = UserProfileSerializer(following, many=True, context={'request': request})
         return Response({'count': following.count(), 'results': serializer.data})
+
+
+class AppSettingsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        settings_obj = get_user_settings(request.user)
+        return Response(AppSettingsSerializer(settings_obj).data)
+
+    def patch(self, request):
+        settings_obj = get_user_settings(request.user)
+        serializer = AppSettingsSerializer(
+            settings_obj,
+            data=request.data,
+            partial=True,
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class DeleteAccountView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request):
+        serializer = DeleteAccountSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            request.user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

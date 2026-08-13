@@ -5,7 +5,8 @@ from .views import (
     RegisterView, RegisterArtistView,
     UserProfileView, UpdateProfileView,
     FollowUserView, UnfollowUserView,
-    UserFollowersView, UserFollowingView
+    UserFollowersView, UserFollowingView,
+    AppSettingsView, DeleteAccountView,
 )
 
 urlpatterns = [
@@ -16,6 +17,8 @@ urlpatterns = [
     path('refresh/', RefreshTokenView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
     path('me/', UserMeView.as_view(), name='user_me'),
+    path('settings/', AppSettingsView.as_view(), name='app_settings'),
+    path('settings/account/', DeleteAccountView.as_view(), name='delete_account'),
 
     # Profile
     path('profile/<int:user_id>/', UserProfileView.as_view(), name='user_profile'),

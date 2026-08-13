@@ -4,11 +4,11 @@ from .models import Notification, Ticket, TicketReply
 
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
-	list_display = ('user', 'type', 'title', 'is_read', 'created_at')
+	list_display = ('user', 'type', 'title', 'is_read', 'read_at', 'created_at')
 	list_filter = ('type', 'is_read', 'created_at')
 	search_fields = ('user__display_name', 'user__email', 'title')
 	ordering = ('-created_at',)
-	readonly_fields = ('created_at', 'updated_at')
+	readonly_fields = ('created_at', 'updated_at', 'read_at')
 
 
 @admin.register(Ticket)

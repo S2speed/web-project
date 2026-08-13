@@ -1,6 +1,16 @@
 from rest_framework import serializers
 
-from .models import Ticket, TicketReply
+from .models import Notification, Ticket, TicketReply
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = (
+            'id', 'type', 'title', 'message', 'is_read', 'read_at',
+            'link', 'created_at', 'updated_at',
+        )
+        read_only_fields = fields
 
 
 class TicketUserSerializer(serializers.Serializer):

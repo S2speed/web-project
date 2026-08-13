@@ -2,17 +2,85 @@
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Notification, Ticket
 from .serializers import (
+    NotificationSerializer,
     TicketCreateSerializer,
     TicketReplyCreateSerializer,
     TicketSerializer,
 )
+from .services import create_notification, ensure_subscription_expiry_notification, notify_users
+
+
+class NotificationPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class NotificationListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ensure_subscription_expiry_notification(request.user)
+        queryset = Notification.objects.filter(user=request.user)
+
+        read_state = request.query_params.get('state')
+        if read_state:
+            if read_state not in ('read', 'unread'):
+                return Response({'state': ['Use read or unread.']}, status=status.HTTP_400_BAD_REQUEST)
+            queryset = queryset.filter(is_read=read_state == 'read')
+
+        notification_type = request.query_params.get('type')
+        if notification_type:
+            if notification_type not in dict(Notification.TYPE_CHOICES):
+                return Response({'type': ['Invalid notification type.']}, status=status.HTTP_400_BAD_REQUEST)
+            queryset = queryset.filter(type=notification_type)
+
+        unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
+        paginator = NotificationPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        response = paginator.get_paginated_response(NotificationSerializer(page, many=True).data)
+        response.data['unread_count'] = unread_count
+        return response
+
+
+class NotificationReadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, notification_id):
+        notification = get_object_or_404(Notification, id=notification_id, user=request.user)
+        notification.mark_as_read()
+        return Response(NotificationSerializer(notification).data)
+
+
+class NotificationReadAllView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        now = timezone.now()
+        updated = Notification.objects.filter(user=request.user, is_read=False).update(
+            is_read=True,
+            read_at=now,
+            updated_at=now,
+        )
+        return Response({'updated_count': updated, 'unread_count': 0})
+
+
+class NotificationDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, notification_id):
+        notification = get_object_or_404(Notification, id=notification_id, user=request.user)
+        notification.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def _can_manage_tickets(user):
@@ -61,16 +129,14 @@ class TicketListCreateView(APIView):
         staff_users = request.user.__class__.objects.filter(
             Q(role__in=('admin', 'support')) | Q(is_superuser=True),
         ).distinct()
-        Notification.objects.bulk_create([
-            Notification(
-                user=staff_user,
-                type='ticket',
-                title='New support ticket',
-                message=f'{request.user.display_name} opened ticket #{ticket.id}: {ticket.subject}',
-                link=f'/admin/dashboard?ticket={ticket.id}',
-            )
-            for staff_user in staff_users
-        ])
+        notify_users(
+            staff_users,
+            type='ticket',
+            title='New support ticket',
+            message=f'{request.user.display_name} opened ticket #{ticket.id}: {ticket.subject}',
+            link=f'/admin/dashboard?ticket={ticket.id}',
+            dedupe_key=f'new-ticket:{ticket.id}',
+        )
         return Response(TicketSerializer(ticket).data, status=status.HTTP_201_CREATED)
 
 
@@ -100,12 +166,13 @@ class TicketReplyView(APIView):
 
             reply = ticket.reply(serializer.validated_data['message'], request.user)
             if reply.is_from_support:
-                Notification.objects.create(
+                create_notification(
                     user=ticket.user,
                     type='ticket',
                     title=f'Reply to ticket #{ticket.id}',
                     message=reply.message,
                     link=f'/tickets/{ticket.id}',
+                    dedupe_key=f'ticket-reply:{reply.id}',
                 )
 
         ticket = Ticket.objects.select_related('user', 'assigned_to').prefetch_related('replies__user').get(id=ticket.id)

@@ -4,6 +4,7 @@ Custom user model placeholder.
 """
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.base_user import BaseUserManager
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 
@@ -61,6 +62,7 @@ class CustomUser(AbstractUser):
 
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='listener')
     subscription = models.CharField(max_length=20, choices=SUBSCRIPTION_CHOICES, default='free')
+    subscription_expires_at = models.DateTimeField(null=True, blank=True)
     display_name = models.CharField(max_length=100)
     avatar = models.ImageField(upload_to='covers/avatars/', null=True, blank=True)
     bio = models.TextField(blank=True)
@@ -116,3 +118,36 @@ class CustomUser(AbstractUser):
             'gold': {'max_playlists': None, 'max_daily_streams': None, 'can_upload_avatar': True, 'has_early_access': True, 'can_see_stats': True},
         }
         return limits.get(self.subscription, limits['free'])
+
+
+class UserSettings(models.Model):
+    """Server-side preferences shared by every device a user signs in from."""
+
+    LANGUAGE_CHOICES = (
+        ('fa', 'Persian'),
+        ('en', 'English'),
+    )
+
+    user = models.OneToOneField(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='app_settings',
+    )
+    notification_in_app = models.BooleanField(default=True)
+    notification_push = models.BooleanField(default=True)
+    notification_email = models.BooleanField(default=True)
+    notification_daily_limit = models.PositiveSmallIntegerField(
+        default=10,
+        validators=[MinValueValidator(0), MaxValueValidator(50)],
+    )
+    app_sound = models.BooleanField(default=True)
+    language = models.CharField(max_length=5, choices=LANGUAGE_CHOICES, default='fa')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'user setting'
+        verbose_name_plural = 'user settings'
+
+    def __str__(self):
+        return f'Settings for {self.user.email}'

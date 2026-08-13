@@ -1,8 +1,9 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.hashers import make_password
+from django.db import transaction
 from apps.music.models import Artist
-from .models import CustomUser
+from .models import CustomUser, UserSettings
 
 
 class LoginSerializer(serializers.Serializer):
@@ -51,7 +52,6 @@ class RegisterSerializer(serializers.ModelSerializer):
         validated_data['password'] = make_password(validated_data['password'])
         validated_data['role'] = 'listener'
         validated_data['subscription'] = 'free'
-        validated_data['username'] = validated_data['email']
         return super().create(validated_data)
 
 
@@ -77,6 +77,7 @@ class RegisterArtistSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'email': 'This email is already registered'})
         return data
 
+    @transaction.atomic
     def create(self, validated_data):
         artist_name = validated_data.pop('artist_name')
         bio = validated_data.pop('bio', '')
@@ -86,7 +87,6 @@ class RegisterArtistSerializer(serializers.ModelSerializer):
         validated_data['password'] = make_password(validated_data['password'])
         validated_data['role'] = 'artist'
         validated_data['subscription'] = 'gold'
-        validated_data['username'] = validated_data['email']
         validated_data['is_verified'] = False
 
         user = CustomUser.objects.create(**validated_data)
@@ -153,4 +153,88 @@ class FollowSerializer(serializers.Serializer):
             raise serializers.ValidationError("You can't follow yourself")
         if not CustomUser.objects.filter(id=value).exists():
             raise serializers.ValidationError('Target user not found')
+        return value
+
+
+class NotificationSettingsSerializer(serializers.Serializer):
+    in_app = serializers.BooleanField(required=False)
+    push = serializers.BooleanField(required=False)
+    email = serializers.BooleanField(required=False)
+    daily_limit = serializers.IntegerField(min_value=0, max_value=50, required=False)
+
+
+class AppSettingsSerializer(serializers.Serializer):
+    notification_settings = NotificationSettingsSerializer(required=False)
+    app_sound = serializers.BooleanField(required=False)
+    language = serializers.ChoiceField(choices=UserSettings.LANGUAGE_CHOICES, required=False)
+    subscription = serializers.SerializerMethodField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+
+    def get_subscription(self, obj):
+        return {
+            'type': obj.user.subscription,
+            'expires_at': obj.user.subscription_expires_at,
+            'manage_url': '/settings#subscription',
+        }
+
+    def to_representation(self, instance):
+        return {
+            'notification_settings': {
+                'in_app': instance.notification_in_app,
+                'push': instance.notification_push,
+                'email': instance.notification_email,
+                'daily_limit': instance.notification_daily_limit,
+            },
+            'app_sound': instance.app_sound,
+            'language': instance.language,
+            'subscription': self.get_subscription(instance),
+            'updated_at': instance.updated_at,
+        }
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError('Provide at least one setting to update.')
+        return attrs
+
+    def update(self, instance, validated_data):
+        notification_settings = validated_data.pop('notification_settings', {})
+        mapping = {
+            'in_app': 'notification_in_app',
+            'push': 'notification_push',
+            'email': 'notification_email',
+            'daily_limit': 'notification_daily_limit',
+        }
+        for source, target in mapping.items():
+            if source in notification_settings:
+                setattr(instance, target, notification_settings[source])
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        instance.full_clean()
+        instance.save()
+
+        instance.user.notification_settings = {
+            'inApp': instance.notification_in_app,
+            'push': instance.notification_push,
+            'email': instance.notification_email,
+            'dailyLimit': instance.notification_daily_limit,
+            'appSound': instance.app_sound,
+            'language': instance.language,
+        }
+        instance.user.save(update_fields=['notification_settings', 'updated_at'])
+        return instance
+
+
+class DeleteAccountSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+    confirmation = serializers.CharField(write_only=True)
+
+    def validate_confirmation(self, value):
+        if value != 'حذف حساب':
+            raise serializers.ValidationError('Enter the exact confirmation phrase: حذف حساب')
+        return value
+
+    def validate_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError('Password is incorrect.')
         return value

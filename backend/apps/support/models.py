@@ -19,7 +19,9 @@ class Notification(models.Model):
     title = models.CharField(max_length=200)
     message = models.TextField()
     is_read = models.BooleanField(default=False)
-    link = models.URLField(blank=True, null=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    link = models.CharField(max_length=500, blank=True, null=True)
+    dedupe_key = models.CharField(max_length=160, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -28,13 +30,25 @@ class Notification(models.Model):
         verbose_name = 'notification'
         verbose_name_plural = 'notifications'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_read', 'created_at'], name='notification_user_state_idx'),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'dedupe_key'],
+                condition=~models.Q(dedupe_key=''),
+                name='unique_user_notification_dedupe_key',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user.display_name} - {self.title}"
 
     def mark_as_read(self):
-        self.is_read = True
-        self.save()
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save(update_fields=['is_read', 'read_at', 'updated_at'])
 
 
 class Ticket(models.Model):

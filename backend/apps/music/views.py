@@ -28,7 +28,7 @@ from .services import (
     reorder_queue, replace_queue,
 )
 from apps.users.permissions import IsAdminOrSupport
-from apps.support.models import Notification
+from apps.support.services import create_notification, notify_new_release
 from apps.users.permissions import IsArtist
 
 
@@ -123,12 +123,13 @@ class VerifyArtistView(APIView):
                 'Your artist account was approved.' if approved
                 else f'Your artist account was rejected. Reason: {reason}'
             )
-            Notification.objects.create(
+            create_notification(
                 user=user,
                 type='verification',
                 title='Artist verification result',
                 message=message,
                 link=f'/artist/{artist.id}',
+                dedupe_key=f'artist-verification:{artist.id}:{status_val}',
             )
 
         return Response({'message': f'Artist {status_val} successfully', 'artist': ArtistSerializer(artist, context={'request': request}).data})
@@ -587,6 +588,7 @@ class SongCreateView(APIView):
         serializer = SongCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             song = serializer.save()
+            notify_new_release(song)
             return Response(SongSerializer(song, context={'request': request}).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

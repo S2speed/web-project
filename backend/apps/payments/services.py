@@ -8,7 +8,7 @@ from django.db.models import Count, Sum
 from django.utils import timezone
 
 from apps.music.models import Artist, StreamEvent
-from apps.support.models import Notification
+from apps.support.services import create_notification
 
 from .models import ArtistMonthlyStatement
 
@@ -91,12 +91,13 @@ def settle_artist_statement(artist, period, admin_user):
     statement.settled_at = timezone.now()
     statement.settled_by = admin_user
     statement.save(update_fields=['status', 'settled_at', 'settled_by', 'updated_at'])
-    Notification.objects.create(
+    create_notification(
         user=artist.user,
         type='financial',
         title='Artist payment settled',
         message=f'Your reward for {period:%Y-%m} was settled: {statement.reward_amount}.',
         link='/artist/dashboard',
+        dedupe_key=f'artist-settlement:{artist.id}:{period:%Y-%m}',
     )
     return statement, True
 
