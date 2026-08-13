@@ -11,6 +11,14 @@ Phase 3 implements subscription-aware playlists, a synchronized playback queue,
 and authoritative stream accounting. API details and acceptance criteria are in
 [`backend/docs/phase3-api.md`](backend/docs/phase3-api.md).
 
+## Phase 4: admin and support
+
+Phase 4 completes role-aware artist verification, private support-ticket
+conversations, backend-aggregated monthly artist accounting and settlement, and
+admin-controlled subscription prices/revenue reports. API contracts, access
+rules, accounting behavior, and examples are documented in
+[`backend/docs/phase4-admin-support-api.md`](backend/docs/phase4-admin-support-api.md).
+
 ### Backend development
 
 ```powershell
@@ -20,6 +28,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 python manage.py migrate
 python manage.py test apps.music.tests.test_phase3
+python manage.py test apps.music.tests.test_phase4_verification apps.support.tests.test_phase4_tickets apps.payments.tests.test_phase4_accounting
 python manage.py runserver
 ```
 

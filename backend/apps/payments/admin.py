@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import SubscriptionPrice, Transaction
+from .models import ArtistMonthlyStatement, SubscriptionPrice, Transaction
 
 
 @admin.register(SubscriptionPrice)
@@ -26,3 +26,12 @@ class TransactionAdmin(admin.ModelAdmin):
 		('Payment Info', {'fields': ('reference_id', 'payment_gateway', 'payment_data')}),
 		('Dates', {'fields': ('created_at', 'updated_at', 'verified_at')}),
 	)
+
+
+@admin.register(ArtistMonthlyStatement)
+class ArtistMonthlyStatementAdmin(admin.ModelAdmin):
+	list_display = ('artist', 'period', 'unique_listeners', 'stream_count', 'reward_amount', 'status', 'settled_at')
+	list_filter = ('status', 'period')
+	search_fields = ('artist__stage_name', 'artist__user__email')
+	readonly_fields = ('created_at', 'updated_at', 'settled_at')
+	ordering = ('-period', 'artist__stage_name')

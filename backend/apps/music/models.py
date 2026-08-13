@@ -7,12 +7,35 @@ from django.utils import timezone
 class Artist(models.Model):
     """Artist profile linked one-to-one with a user."""
 
+    VERIFICATION_PENDING = 'pending'
+    VERIFICATION_APPROVED = 'approved'
+    VERIFICATION_REJECTED = 'rejected'
+    VERIFICATION_CHOICES = (
+        (VERIFICATION_PENDING, 'pending'),
+        (VERIFICATION_APPROVED, 'approved'),
+        (VERIFICATION_REJECTED, 'rejected'),
+    )
+
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='artist_profile')
     stage_name = models.CharField(max_length=100)
     bio = models.TextField(blank=True)
     genre = models.CharField(max_length=50, blank=True)
     is_verified = models.BooleanField(default=False)
+    verification_status = models.CharField(
+        max_length=12,
+        choices=VERIFICATION_CHOICES,
+        default=VERIFICATION_PENDING,
+        db_index=True,
+    )
+    verification_reason = models.TextField(blank=True)
     verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='artist_verification_decisions',
+    )
     portfolio = models.FileField(upload_to='portfolios/', null=True, blank=True)
     followers = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='followed_artists', blank=True)
     total_listeners = models.PositiveIntegerField(default=0)

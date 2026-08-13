@@ -14,7 +14,7 @@ class SubscriptionPrice(models.Model):
     """Admin-manageable subscription pricing."""
 
     subscription_type = models.CharField(max_length=20, choices=SUBSCRIPTION_CHOICES, unique=True)
-    price = models.PositiveIntegerField()
+    price = models.DecimalField(max_digits=12, decimal_places=2)
     duration_days = models.PositiveIntegerField(default=30)
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
@@ -38,7 +38,7 @@ class Transaction(models.Model):
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
     subscription_type = models.CharField(max_length=20, choices=SUBSCRIPTION_CHOICES)
-    amount = models.PositiveIntegerField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     reference_id = models.CharField(max_length=100, blank=True)
     payment_gateway = models.CharField(max_length=50, blank=True)
@@ -67,4 +67,48 @@ class Transaction(models.Model):
         # update user subscription
         user = self.user
         user.subscription = self.subscription_type
-        user.save()
+        user.save(update_fields=['subscription', 'updated_at'])
+
+
+class ArtistMonthlyStatement(models.Model):
+    """Immutable-after-settlement monthly accounting snapshot for an artist."""
+
+    STATUS_PENDING = 'pending'
+    STATUS_SETTLED = 'settled'
+    STATUS_CHOICES = (
+        (STATUS_PENDING, 'pending'),
+        (STATUS_SETTLED, 'settled'),
+    )
+
+    artist = models.ForeignKey(
+        'music.Artist',
+        on_delete=models.CASCADE,
+        related_name='monthly_statements',
+    )
+    period = models.DateField(help_text='First day of the accounting month.')
+    unique_listeners = models.PositiveIntegerField(default=0)
+    stream_count = models.PositiveBigIntegerField(default=0)
+    reward_amount = models.DecimalField(max_digits=16, decimal_places=4, default=0)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    settled_at = models.DateTimeField(null=True, blank=True)
+    settled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='settled_artist_statements',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-period', 'artist__stage_name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['artist', 'period'],
+                name='unique_artist_monthly_statement',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.artist.stage_name} - {self.period:%Y-%m}'

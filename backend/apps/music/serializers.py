@@ -38,11 +38,15 @@ class ArtistSerializer(serializers.ModelSerializer):
 		model = Artist
 		fields = (
 			'id', 'stage_name', 'user', 'user_display_name', 'user_email',
-			'bio', 'genre', 'is_verified', 'verified_at',
+			'bio', 'genre', 'portfolio', 'is_verified', 'verification_status',
+			'verification_reason', 'verified_at', 'verified_by',
 			'followers_count', 'is_following', 'total_listeners', 'total_streams',
 			'created_at', 'updated_at'
 		)
-		read_only_fields = ('id', 'user', 'created_at', 'updated_at')
+		read_only_fields = (
+			'id', 'user', 'is_verified', 'verification_status', 'verification_reason',
+			'verified_at', 'verified_by', 'created_at', 'updated_at',
+		)
 
 	def get_is_following(self, obj):
 		request = self.context.get('request')
@@ -79,10 +83,12 @@ class VerifyArtistSerializer(serializers.Serializer):
 	status = serializers.ChoiceField(choices=['approved', 'rejected'])
 	reason = serializers.CharField(required=False, allow_blank=True)
 
-	def validate_reason(self, value):
-		if self.initial_data.get('status') == 'rejected' and not value:
-			raise serializers.ValidationError('Reason is required when rejecting')
-		return value
+	def validate(self, attrs):
+		reason = attrs.get('reason', '').strip()
+		if attrs['status'] == 'rejected' and not reason:
+			raise serializers.ValidationError({'reason': 'Reason is required when rejecting'})
+		attrs['reason'] = reason
+		return attrs
 
 
 class SongSerializer(serializers.ModelSerializer):

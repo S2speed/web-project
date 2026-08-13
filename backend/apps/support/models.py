@@ -65,9 +65,27 @@ class Ticket(models.Model):
         return f"{self.subject} - {self.user.display_name}"
 
     def reply(self, reply_message, user):
-        TicketReply.objects.create(ticket=self, user=user, message=reply_message)
-        self.status = 'answered'
-        self.save()
+        """Append a reply and move the ticket to the sender-appropriate state."""
+        is_from_support = user.is_superuser or user.role in ('admin', 'support')
+        reply = TicketReply.objects.create(
+            ticket=self,
+            user=user,
+            message=reply_message,
+            is_from_support=is_from_support,
+        )
+        self.status = 'answered' if is_from_support else 'open'
+        self.resolved_at = None
+        if is_from_support and self.assigned_to_id is None:
+            self.assigned_to = user
+        self.save(update_fields=['status', 'resolved_at', 'assigned_to', 'updated_at'])
+        return reply
+
+    def close(self):
+        """Close the ticket idempotently."""
+        if self.status != 'closed':
+            self.status = 'closed'
+            self.resolved_at = timezone.now()
+            self.save(update_fields=['status', 'resolved_at', 'updated_at'])
 
 
 class TicketReply(models.Model):

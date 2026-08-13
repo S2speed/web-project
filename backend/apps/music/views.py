@@ -1,6 +1,7 @@
 """Music app API views."""
-from datetime import datetime, timedelta
+from datetime import timedelta
 
+from django.db import transaction
 from django.db.models import Count, Sum, Q
 from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
@@ -66,7 +67,10 @@ class PendingArtistsView(APIView):
     permission_classes = [IsAuthenticated, IsAdminOrSupport]
 
     def get(self, request):
-        pending_artists = Artist.objects.filter(is_verified=False)
+        pending_artists = Artist.objects.filter(
+            is_verified=False,
+            verification_status=Artist.VERIFICATION_PENDING,
+        ).select_related('user')
         serializer = ArtistSerializer(pending_artists, many=True, context={'request': request})
         return Response({'count': pending_artists.count(), 'results': serializer.data})
 
@@ -75,47 +79,57 @@ class VerifyArtistView(APIView):
     permission_classes = [IsAuthenticated, IsAdminOrSupport]
 
     def post(self, request, artist_id):
-        artist = get_object_or_404(Artist, id=artist_id)
         serializer = VerifyArtistSerializer(data=request.data)
 
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.is_valid(raise_exception=True)
 
         status_val = serializer.validated_data['status']
         reason = serializer.validated_data.get('reason', '')
 
-        if status_val == 'approved':
-            artist.is_verified = True
-            artist.verified_at = datetime.now()
-            artist.save()
+        with transaction.atomic():
+            artist = get_object_or_404(
+                Artist.objects.select_for_update().select_related('user'),
+                id=artist_id,
+            )
+            if artist.verification_status != Artist.VERIFICATION_PENDING:
+                return Response(
+                    {'detail': 'This artist application has already been reviewed.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            now = timezone.now()
+            approved = status_val == Artist.VERIFICATION_APPROVED
+            artist.is_verified = approved
+            artist.verification_status = status_val
+            artist.verification_reason = reason
+            artist.verified_at = now if approved else None
+            artist.verified_by = request.user
+            artist.save(update_fields=[
+                'is_verified', 'verification_status', 'verification_reason',
+                'verified_at', 'verified_by', 'updated_at',
+            ])
 
             user = artist.user
-            user.is_verified = True
-            user.verified_at = datetime.now()
+            user.is_verified = approved
+            user.verified_at = now if approved else None
             user.verified_by = request.user
-            user.save()
+            user.rejection_reason = '' if approved else reason
+            user.save(update_fields=[
+                'is_verified', 'verified_at', 'verified_by',
+                'rejection_reason', 'updated_at',
+            ])
 
-            message = 'Your artist account was approved'
-            notification_type = 'verification'
-        else:
-            artist.is_verified = False
-            artist.save()
-
-            user = artist.user
-            user.is_verified = False
-            user.rejection_reason = reason
-            user.save()
-
-            message = f'Your artist account was rejected. Reason: {reason}'
-            notification_type = 'verification'
-
-        Notification.objects.create(
-            user=artist.user,
-            type=notification_type,
-            title='Artist verification result',
-            message=message,
-            link=f'/artist/{artist.id}'
-        )
+            message = (
+                'Your artist account was approved.' if approved
+                else f'Your artist account was rejected. Reason: {reason}'
+            )
+            Notification.objects.create(
+                user=user,
+                type='verification',
+                title='Artist verification result',
+                message=message,
+                link=f'/artist/{artist.id}',
+            )
 
         return Response({'message': f'Artist {status_val} successfully', 'artist': ArtistSerializer(artist, context={'request': request}).data})
 

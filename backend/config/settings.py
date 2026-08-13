@@ -92,6 +92,11 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
+# Phase 4 accounting formula. Both values can be changed per deployment without
+# changing application code; all aggregation remains authoritative on backend.
+ARTIST_REWARD_PER_STREAM = os.getenv('ARTIST_REWARD_PER_STREAM', '0.0028')
+ARTIST_REWARD_PER_UNIQUE_LISTENER = os.getenv('ARTIST_REWARD_PER_UNIQUE_LISTENER', '0.01')
+
 # Static & Media files
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
