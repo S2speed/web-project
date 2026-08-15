@@ -97,6 +97,12 @@ USE_TZ = True
 ARTIST_REWARD_PER_STREAM = os.getenv('ARTIST_REWARD_PER_STREAM', '0.0028')
 ARTIST_REWARD_PER_UNIQUE_LISTENER = os.getenv('ARTIST_REWARD_PER_UNIQUE_LISTENER', '0.01')
 
+# Phase 6 payment adapter. Sandbox is local-only and can be replaced by another
+# adapter without changing checkout/subscription business rules.
+PAYMENT_GATEWAY = os.getenv('PAYMENT_GATEWAY', 'sandbox')
+PAYMENT_PENDING_TTL_MINUTES = int(os.getenv('PAYMENT_PENDING_TTL_MINUTES', '15'))
+BACKEND_PUBLIC_URL = os.getenv('BACKEND_PUBLIC_URL', 'http://localhost:8000').rstrip('/')
+
 # Static & Media files
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
@@ -125,7 +131,7 @@ AUTH_USER_MODEL = 'users.CustomUser'
 # REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'apps.users.authentication.SubscriptionAwareJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',

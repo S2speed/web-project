@@ -26,6 +26,13 @@ notification inbox, read/delete actions, daily notification limits, duplicate
 protection, and automatic role-aware events. See
 [`backend/docs/phase5-notifications-settings-api.md`](backend/docs/phase5-notifications-settings-api.md).
 
+## Phase 6: payments and subscriptions
+
+Phase 6 adds idempotent checkout and callback verification through a replaceable
+gateway adapter, 1/3/6/12-month subscription lifecycle management, transaction
+history, and backend-aggregated admin payment reports. See
+[`backend/docs/phase6-payments-subscriptions-api.md`](backend/docs/phase6-payments-subscriptions-api.md).
+
 ### Backend development
 
 ```powershell
@@ -37,6 +44,7 @@ python manage.py migrate
 python manage.py test apps.music.tests.test_phase3
 python manage.py test apps.music.tests.test_phase4_verification apps.support.tests.test_phase4_tickets apps.payments.tests.test_phase4_accounting
 python manage.py test apps.users.tests.test_phase5_settings apps.support.tests.test_phase5_notifications apps.music.tests.test_phase5_role_notifications
+python manage.py test apps.payments.tests.test_phase6_payments
 python manage.py runserver
 ```
 

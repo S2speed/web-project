@@ -142,7 +142,7 @@ class ArtistStatsView(APIView):
         artist = get_object_or_404(Artist, id=artist_id)
         user = request.user
 
-        if user.subscription != 'gold':
+        if user.effective_subscription != 'gold':
             return Response({'error': 'Upgrade to gold to view stats'}, status=status.HTTP_403_FORBIDDEN)
 
         songs = artist.songs.all()
@@ -466,7 +466,7 @@ class PlaylistCheckLimitView(APIView):
             'max_allowed': max_playlists,
             'limit': max_playlists,
             'remaining': remaining,
-            'subscription': user.subscription,
+            'subscription': user.effective_subscription,
         })
 
 
@@ -677,7 +677,7 @@ class MyStreamStatsView(APIView):
             'total': queryset.count(),
             'daily_limit': daily_limit,
             'remaining_today': None if daily_limit is None else max(daily_limit - used_today, 0),
-            'subscription': request.user.subscription,
+            'subscription': request.user.effective_subscription,
         })
 
 
@@ -687,7 +687,7 @@ class SongStreamStatsView(APIView):
     def get(self, request, song_id):
         song = get_object_or_404(Song.objects.select_related('artist__user'), id=song_id)
         can_view = (
-            request.user.subscription == 'gold'
+            request.user.effective_subscription == 'gold'
             or request.user == song.artist.user
             or request.user.role in ('admin', 'support')
         )

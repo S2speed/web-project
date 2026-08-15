@@ -6,6 +6,7 @@ from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.base_user import BaseUserManager
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 
 class CustomUserManager(BaseUserManager):
@@ -110,6 +111,16 @@ class CustomUser(AbstractUser):
         return self.role in ['admin', 'support']
 
     @property
+    def effective_subscription(self):
+        if (
+            self.subscription != 'free'
+            and self.subscription_expires_at is not None
+            and self.subscription_expires_at <= timezone.now()
+        ):
+            return 'free'
+        return self.subscription
+
+    @property
     def subscription_limit(self):
         """Return subscription limits for the current user's tier."""
         limits = {
@@ -117,7 +128,7 @@ class CustomUser(AbstractUser):
             'silver': {'max_playlists': 100, 'max_daily_streams': None, 'can_upload_avatar': True, 'has_early_access': False, 'can_see_stats': False},
             'gold': {'max_playlists': None, 'max_daily_streams': None, 'can_upload_avatar': True, 'has_early_access': True, 'can_see_stats': True},
         }
-        return limits.get(self.subscription, limits['free'])
+        return limits.get(self.effective_subscription, limits['free'])
 
 
 class UserSettings(models.Model):

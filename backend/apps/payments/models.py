@@ -35,13 +35,25 @@ class Transaction(models.Model):
         ('success', 'success'),
         ('failed', 'failed'),
     )
+    DURATION_CHOICES = (
+        (1, '1 month'),
+        (3, '3 months'),
+        (6, '6 months'),
+        (12, '12 months'),
+    )
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
     subscription_type = models.CharField(max_length=20, choices=SUBSCRIPTION_CHOICES)
+    duration_months = models.PositiveSmallIntegerField(choices=DURATION_CHOICES, default=1)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=8, default='IRR')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     reference_id = models.CharField(max_length=100, blank=True)
-    payment_gateway = models.CharField(max_length=50, blank=True)
+    payment_gateway = models.CharField(max_length=50, default='sandbox')
+    gateway_authority = models.CharField(max_length=100, blank=True)
+    idempotency_key = models.CharField(max_length=64, blank=True)
+    failure_reason = models.CharField(max_length=250, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
 
     payment_data = models.JSONField(default=dict, blank=True)
     verified_at = models.DateTimeField(null=True, blank=True)
@@ -53,21 +65,80 @@ class Transaction(models.Model):
         verbose_name = 'transaction'
         verbose_name_plural = 'transactions'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'status', 'created_at'], name='payment_user_status_idx'),
+            models.Index(fields=['status', 'verified_at'], name='payment_status_verified_idx'),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name='payment_amount_positive'),
+            models.UniqueConstraint(
+                fields=['user', 'idempotency_key'],
+                condition=~models.Q(idempotency_key=''),
+                name='unique_user_payment_idempotency',
+            ),
+            models.UniqueConstraint(
+                fields=['gateway_authority'],
+                condition=~models.Q(gateway_authority=''),
+                name='unique_payment_gateway_authority',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user.display_name} - {self.subscription_type} - {self.status}"
 
-    def verify_payment(self, reference_id):
-        """Mark the transaction as successful and update the user's subscription."""
-        self.status = 'success'
-        self.reference_id = reference_id
-        self.verified_at = timezone.now()
-        self.save()
+    @property
+    def is_expired(self):
+        return bool(self.expires_at and self.expires_at <= timezone.now())
 
-        # update user subscription
-        user = self.user
-        user.subscription = self.subscription_type
-        user.save(update_fields=['subscription', 'updated_at'])
+
+class UserSubscription(models.Model):
+    """A paid subscription period created by exactly one successful transaction."""
+
+    STATUS_ACTIVE = 'active'
+    STATUS_EXPIRED = 'expired'
+    STATUS_REPLACED = 'replaced'
+    STATUS_CHOICES = (
+        (STATUS_ACTIVE, 'active'),
+        (STATUS_EXPIRED, 'expired'),
+        (STATUS_REPLACED, 'replaced'),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='subscription_periods',
+    )
+    transaction = models.OneToOneField(
+        Transaction,
+        on_delete=models.CASCADE,
+        related_name='subscription_period',
+    )
+    subscription_type = models.CharField(
+        max_length=20,
+        choices=(('silver', 'silver'), ('gold', 'gold')),
+    )
+    starts_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    cancel_at_period_end = models.BooleanField(default=False)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-expires_at', '-id']
+        indexes = [
+            models.Index(fields=['user', 'status', 'expires_at'], name='subscription_user_state_idx'),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(expires_at__gt=models.F('starts_at')),
+                name='subscription_expiry_after_start',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user.email} - {self.subscription_type} until {self.expires_at}'
 
 
 class ArtistMonthlyStatement(models.Model):

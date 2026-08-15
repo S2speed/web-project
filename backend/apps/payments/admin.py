@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import ArtistMonthlyStatement, SubscriptionPrice, Transaction
+from .models import ArtistMonthlyStatement, SubscriptionPrice, Transaction, UserSubscription
 
 
 @admin.register(SubscriptionPrice)
@@ -15,17 +15,26 @@ class SubscriptionPriceAdmin(admin.ModelAdmin):
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
-	list_display = ('user', 'subscription_type', 'amount', 'status', 'created_at')
-	list_filter = ('status', 'subscription_type', 'created_at')
-	search_fields = ('user__display_name', 'user__email', 'reference_id')
+	list_display = ('user', 'subscription_type', 'duration_months', 'amount', 'currency', 'status', 'payment_gateway', 'created_at')
+	list_filter = ('status', 'subscription_type', 'duration_months', 'payment_gateway', 'created_at')
+	search_fields = ('user__display_name', 'user__email', 'reference_id', 'gateway_authority')
 	ordering = ('-created_at',)
-	readonly_fields = ('created_at', 'updated_at')
+	readonly_fields = ('gateway_authority', 'reference_id', 'verified_at', 'created_at', 'updated_at')
 
 	fieldsets = (
-		('Main', {'fields': ('user', 'subscription_type', 'amount', 'status')}),
-		('Payment Info', {'fields': ('reference_id', 'payment_gateway', 'payment_data')}),
-		('Dates', {'fields': ('created_at', 'updated_at', 'verified_at')}),
+		('Main', {'fields': ('user', 'subscription_type', 'duration_months', 'amount', 'currency', 'status')}),
+		('Payment Info', {'fields': ('reference_id', 'payment_gateway', 'gateway_authority', 'failure_reason', 'payment_data')}),
+		('Dates', {'fields': ('expires_at', 'created_at', 'updated_at', 'verified_at')}),
 	)
+
+
+@admin.register(UserSubscription)
+class UserSubscriptionAdmin(admin.ModelAdmin):
+	list_display = ('user', 'subscription_type', 'starts_at', 'expires_at', 'status', 'cancel_at_period_end')
+	list_filter = ('subscription_type', 'status', 'cancel_at_period_end')
+	search_fields = ('user__display_name', 'user__email', 'transaction__reference_id')
+	readonly_fields = ('transaction', 'user', 'subscription_type', 'starts_at', 'expires_at', 'created_at', 'updated_at')
+	ordering = ('-expires_at',)
 
 
 @admin.register(ArtistMonthlyStatement)
