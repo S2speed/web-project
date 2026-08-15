@@ -3,7 +3,12 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef } from 'react';
 import { getPlaybackQueue, incrementPlayCount, updatePlaybackQueue } from '@/lib/api';
 import { useUser } from '@/contexts/UserContext';
-import { PLAYER_REPEAT_MODES, PLAYER_REPEAT_SEQUENCE, STORAGE_KEYS } from '@/utils/constants';
+import {
+  PLAYER_CROSSFADE_SECONDS,
+  PLAYER_REPEAT_MODES,
+  PLAYER_REPEAT_SEQUENCE,
+  STORAGE_KEYS,
+} from '@/utils/constants';
 
 export const PLAYER_INITIAL_STATE = {
   currentSong: null,
@@ -13,6 +18,7 @@ export const PLAYER_INITIAL_STATE = {
   volume: 0.7,
   repeatMode: PLAYER_REPEAT_MODES.NONE,
   isShuffle: false,
+  isCrossfadeEnabled: false,
   progress: 0,
   duration: 0,
   error: '',
@@ -38,6 +44,7 @@ function initializePlayerState(initialState) {
         : initialState.volume,
       repeatMode: PLAYER_REPEAT_SEQUENCE.includes(saved.repeatMode) ? saved.repeatMode : initialState.repeatMode,
       isShuffle: Boolean(saved.isShuffle),
+      isCrossfadeEnabled: Boolean(saved.isCrossfadeEnabled),
       duration: Number(saved.queue[currentIndex]?.duration) || 0,
     };
   } catch {
@@ -127,9 +134,12 @@ export function playerReducer(state, action) {
       if (state.repeatMode === PLAYER_REPEAT_MODES.ONE) {
         return { ...state, progress: 0, isPlaying: true, streamNonce: state.streamNonce + 1 };
       }
-      const nextIndex = state.isShuffle
-        ? Math.floor(Math.random() * state.queue.length)
-        : state.currentIndex + 1;
+      const requestedIndex = Number(action.index);
+      const nextIndex = Number.isInteger(requestedIndex) && requestedIndex >= 0 && requestedIndex < state.queue.length
+        ? requestedIndex
+        : state.isShuffle
+          ? Math.floor(Math.random() * state.queue.length)
+          : state.currentIndex + 1;
       if (nextIndex >= state.queue.length) {
         if (state.repeatMode !== PLAYER_REPEAT_MODES.ALL) return { ...state, isPlaying: false };
         return { ...state, currentIndex: 0, currentSong: state.queue[0], progress: 0, isPlaying: true, streamNonce: state.streamNonce + 1 };
@@ -161,6 +171,8 @@ export function playerReducer(state, action) {
     }
     case 'TOGGLE_SHUFFLE':
       return { ...state, isShuffle: !state.isShuffle };
+    case 'TOGGLE_CROSSFADE':
+      return { ...state, isCrossfadeEnabled: !state.isCrossfadeEnabled };
     case 'SET_ERROR':
       return { ...state, error: action.payload, isPlaying: false };
     default:
@@ -200,6 +212,11 @@ export function PlayerProvider({ children }) {
   const { user } = useUser();
   const [state, dispatch] = useReducer(playerReducer, PLAYER_INITIAL_STATE, initializePlayerState);
   const audioRef = useRef(null);
+  const audioElementsRef = useRef([null, null]);
+  const activeAudioIndexRef = useRef(0);
+  const crossfadeRef = useRef(null);
+  const crossfadeCommitRef = useRef('');
+  const volumeRef = useRef(state.volume);
   const fallbackSongRef = useRef('');
   const fallbackUrlRef = useRef('');
   const serverQueueLoadedRef = useRef(false);
@@ -223,7 +240,19 @@ export function PlayerProvider({ children }) {
     dispatch({ type: 'PLAY_SONG', payload: song, queue, index });
   }, []);
 
+  const cancelCrossfade = useCallback(() => {
+    const fade = crossfadeRef.current;
+    if (!fade) return;
+    window.cancelAnimationFrame(fade.animationFrame);
+    fade.incoming.pause();
+    fade.incoming.currentTime = 0;
+    fade.incoming.volume = 0;
+    fade.outgoing.volume = volumeRef.current;
+    crossfadeRef.current = null;
+  }, []);
+
   const next = useCallback(() => {
+    cancelCrossfade();
     if (state.repeatMode === PLAYER_REPEAT_MODES.ONE && audioRef.current) {
       audioRef.current.currentTime = 0;
       dispatch({ type: 'NEXT' });
@@ -232,31 +261,51 @@ export function PlayerProvider({ children }) {
     }
 
     dispatch({ type: 'NEXT' });
-  }, [state.repeatMode]);
+  }, [cancelCrossfade, state.repeatMode]);
   const previous = useCallback(() => {
+    cancelCrossfade();
     if (state.progress > 3 && audioRef.current) audioRef.current.currentTime = 0;
     dispatch({ type: 'PREVIOUS' });
-  }, [state.progress]);
+  }, [cancelCrossfade, state.progress]);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !state.currentSong) return;
+    if (crossfadeRef.current && crossfadeCommitRef.current !== state.currentSong.id) cancelCrossfade();
     fallbackSongRef.current = '';
+    if (crossfadeCommitRef.current === state.currentSong.id) {
+      crossfadeCommitRef.current = '';
+      dispatch({ type: 'SET_PROGRESS', payload: audio.currentTime || 0 });
+      dispatch({ type: 'SET_DURATION', payload: audio.duration || Number(state.currentSong.duration) || 0 });
+      return;
+    }
     audio.src = state.currentSong.src || '';
     audio.load();
     if (state.isPlaying) audio.play().catch(() => {});
-  }, [state.currentSong]);
+  }, [cancelCrossfade, state.currentSong]);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !state.currentSong) return;
     if (state.isPlaying) audio.play().catch(() => {});
-    else audio.pause();
-  }, [state.isPlaying, state.currentSong]);
+    else {
+      cancelCrossfade();
+      audio.pause();
+    }
+  }, [cancelCrossfade, state.isPlaying, state.currentSong]);
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = state.volume;
+    volumeRef.current = state.volume;
+    const fade = crossfadeRef.current;
+    if (fade) {
+      fade.outgoing.volume = state.volume * (1 - fade.progress);
+      fade.incoming.volume = state.volume * fade.progress;
+    } else if (audioRef.current) audioRef.current.volume = state.volume;
   }, [state.volume]);
+
+  useEffect(() => {
+    if (!state.isCrossfadeEnabled) cancelCrossfade();
+  }, [cancelCrossfade, state.isCrossfadeEnabled]);
 
   useEffect(() => {
     if (!state.currentSong || state.streamNonce === 0) return undefined;
@@ -279,11 +328,12 @@ export function PlayerProvider({ children }) {
         volume: state.volume,
         repeatMode: state.repeatMode,
         isShuffle: state.isShuffle,
+        isCrossfadeEnabled: state.isCrossfadeEnabled,
       }));
     } catch {
       // Playback remains functional when browser storage is unavailable.
     }
-  }, [state.queue, state.currentIndex, state.volume, state.repeatMode, state.isShuffle]);
+  }, [state.queue, state.currentIndex, state.volume, state.repeatMode, state.isShuffle, state.isCrossfadeEnabled]);
 
   useEffect(() => {
     if (!user || !serverQueueLoadedRef.current) return undefined;
@@ -294,8 +344,83 @@ export function PlayerProvider({ children }) {
   }, [user, state.queue, state.currentIndex, state.repeatMode, state.isShuffle]);
 
   useEffect(() => () => {
+    cancelCrossfade();
     if (fallbackUrlRef.current) URL.revokeObjectURL(fallbackUrlRef.current);
+  }, [cancelCrossfade]);
+
+  const finishCrossfade = useCallback(() => {
+    const fade = crossfadeRef.current;
+    if (!fade) return;
+    window.cancelAnimationFrame(fade.animationFrame);
+    activeAudioIndexRef.current = fade.incomingIndex;
+    audioRef.current = fade.incoming;
+    fade.outgoing.pause();
+    fade.outgoing.volume = volumeRef.current;
+    fade.incoming.volume = volumeRef.current;
+    crossfadeCommitRef.current = fade.nextSong.id;
+    crossfadeRef.current = null;
+    dispatch({ type: 'NEXT', index: fade.nextIndex });
   }, []);
+
+  const startCrossfade = useCallback((outgoing) => {
+    if (
+      crossfadeRef.current
+      || !state.isCrossfadeEnabled
+      || !state.isPlaying
+      || state.repeatMode === PLAYER_REPEAT_MODES.ONE
+      || state.queue.length < 2
+    ) return;
+
+    const remaining = outgoing.duration - outgoing.currentTime;
+    if (!Number.isFinite(remaining) || remaining > PLAYER_CROSSFADE_SECONDS || remaining <= 0) return;
+
+    let nextIndex = state.isShuffle
+      ? Math.floor(Math.random() * state.queue.length)
+      : state.currentIndex + 1;
+    if (nextIndex >= state.queue.length) {
+      if (state.repeatMode !== PLAYER_REPEAT_MODES.ALL) return;
+      nextIndex = 0;
+    }
+    if (nextIndex === state.currentIndex && state.queue.length > 1) {
+      nextIndex = (nextIndex + 1) % state.queue.length;
+    }
+
+    const nextSong = state.queue[nextIndex];
+    if (!nextSong?.src) return;
+    const incomingIndex = activeAudioIndexRef.current === 0 ? 1 : 0;
+    const incoming = audioElementsRef.current[incomingIndex];
+    if (!incoming) return;
+
+    incoming.pause();
+    incoming.src = nextSong.src;
+    incoming.currentTime = 0;
+    incoming.volume = 0;
+    incoming.load();
+
+    const fade = {
+      animationFrame: 0,
+      incoming,
+      incomingIndex,
+      nextIndex,
+      nextSong,
+      outgoing,
+      progress: 0,
+      startedAt: performance.now(),
+    };
+    crossfadeRef.current = fade;
+
+    incoming.play().then(() => {
+      const animate = (now) => {
+        if (crossfadeRef.current !== fade) return;
+        fade.progress = Math.min((now - fade.startedAt) / (PLAYER_CROSSFADE_SECONDS * 1000), 1);
+        fade.outgoing.volume = volumeRef.current * (1 - fade.progress);
+        fade.incoming.volume = volumeRef.current * fade.progress;
+        if (fade.progress >= 1) finishCrossfade();
+        else fade.animationFrame = window.requestAnimationFrame(animate);
+      };
+      fade.animationFrame = window.requestAnimationFrame(animate);
+    }).catch(cancelCrossfade);
+  }, [cancelCrossfade, finishCrossfade, state.currentIndex, state.isCrossfadeEnabled, state.isPlaying, state.isShuffle, state.queue, state.repeatMode]);
 
   const seek = (value) => {
     const audio = audioRef.current;
@@ -341,21 +466,45 @@ export function PlayerProvider({ children }) {
         previous,
         toggleRepeat: () => dispatch({ type: 'TOGGLE_REPEAT' }),
         toggleShuffle: () => dispatch({ type: 'TOGGLE_SHUFFLE' }),
+        toggleCrossfade: () => dispatch({ type: 'TOGGLE_CROSSFADE' }),
         setVolume,
         seek,
       }}
     >
       {children}
+      {[0, 1].map((audioIndex) => (
       <audio
-        ref={audioRef}
+        key={audioIndex}
+        ref={(node) => {
+          audioElementsRef.current[audioIndex] = node;
+          if (audioIndex === activeAudioIndexRef.current) audioRef.current = node;
+        }}
         preload="metadata"
-        onTimeUpdate={(event) => dispatch({ type: 'SET_PROGRESS', payload: event.currentTarget.currentTime || 0 })}
-        onLoadedMetadata={(event) => dispatch({ type: 'SET_DURATION', payload: event.currentTarget.duration || Number(state.currentSong?.duration) || 0 })}
-        onPlay={() => dispatch({ type: 'SET_PLAYING', payload: true })}
-        onPause={() => dispatch({ type: 'SET_PLAYING', payload: false })}
-        onEnded={next}
-        onError={handleError}
+        onTimeUpdate={(event) => {
+          if (event.currentTarget !== audioRef.current) return;
+          dispatch({ type: 'SET_PROGRESS', payload: event.currentTarget.currentTime || 0 });
+          startCrossfade(event.currentTarget);
+        }}
+        onLoadedMetadata={(event) => {
+          if (event.currentTarget === audioRef.current) dispatch({ type: 'SET_DURATION', payload: event.currentTarget.duration || Number(state.currentSong?.duration) || 0 });
+        }}
+        onPlay={(event) => {
+          if (event.currentTarget === audioRef.current) dispatch({ type: 'SET_PLAYING', payload: true });
+        }}
+        onPause={(event) => {
+          if (event.currentTarget === audioRef.current) dispatch({ type: 'SET_PLAYING', payload: false });
+        }}
+        onEnded={(event) => {
+          if (event.currentTarget !== audioRef.current) return;
+          if (crossfadeRef.current) finishCrossfade();
+          else next();
+        }}
+        onError={(event) => {
+          if (event.currentTarget === audioRef.current) handleError();
+          else if (crossfadeRef.current?.incoming === event.currentTarget) cancelCrossfade();
+        }}
       />
+      ))}
     </PlayerContext.Provider>
   );
 }

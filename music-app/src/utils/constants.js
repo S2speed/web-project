@@ -72,6 +72,8 @@ export const PLAYER_REPEAT_SEQUENCE = [
   PLAYER_REPEAT_MODES.ONE,
 ];
 
+export const PLAYER_CROSSFADE_SECONDS = 5;
+
 export const LIBRARY_SORT_OPTIONS = {
   RELEASE_DATE: "releaseDate",
   LISTENERS: "listeners",

@@ -21,6 +21,7 @@ export default function Footer() {
     currentSong, isPlaying, togglePlay, previous, next, progress, duration, seek, volume, setVolume,
     queue, currentIndex, playSong, repeatMode, toggleRepeat, isShuffle, toggleShuffle, error,
     removeQueueItem, moveQueueItem, clearUpcoming,
+    isCrossfadeEnabled, toggleCrossfade,
   } = player;
   const isGold = user?.subscription === SUBSCRIPTION_TYPES.GOLD;
   const repeatLabel = repeatMode === PLAYER_REPEAT_MODES.ONE ? 'تکرار یک' : repeatMode === PLAYER_REPEAT_MODES.ALL ? 'تکرار صف' : 'بدون تکرار';
@@ -109,6 +110,16 @@ export default function Footer() {
                     <button type="button" onClick={toggleRepeat} title={repeatLabel} className={repeatMode !== PLAYER_REPEAT_MODES.NONE ? 'text-emerald-300' : 'text-slate-400'}>{repeatMode === PLAYER_REPEAT_MODES.ONE ? '🔂' : '🔁'}</button>
                   </div>
                   <div className="mt-6 flex items-center gap-3"><span>🔊</span><input type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(event.target.value)} className="w-full accent-emerald-400" /></div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isCrossfadeEnabled}
+                    onClick={toggleCrossfade}
+                    className={`mt-5 flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-sm transition ${isCrossfadeEnabled ? 'border-emerald-400/50 bg-emerald-400/10 text-emerald-200' : 'border-white/10 bg-white/5 text-slate-300'}`}
+                  >
+                    <span><strong className="block">Crossfade پنج‌ثانیه‌ای</strong><span className="mt-1 block text-xs text-slate-400">محو تدریجی آهنگ فعلی و شروع هم‌زمان آهنگ بعدی</span></span>
+                    <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${isCrossfadeEnabled ? 'bg-emerald-400' : 'bg-slate-700'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${isCrossfadeEnabled ? 'right-6' : 'right-1'}`} /></span>
+                  </button>
                 </div>
 
                 {isGold && currentSong && (

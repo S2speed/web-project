@@ -45,6 +45,26 @@ describe('player reducer', () => {
     expect(state.isShuffle).toBe(true);
   });
 
+  test('toggles the five-second crossfade setting', () => {
+    let state = playerReducer(PLAYER_INITIAL_STATE, { type: 'TOGGLE_CROSSFADE' });
+    expect(state.isCrossfadeEnabled).toBe(true);
+
+    state = playerReducer(state, { type: 'TOGGLE_CROSSFADE' });
+    expect(state.isCrossfadeEnabled).toBe(false);
+  });
+
+  test('advances to the preselected queue item used by crossfade', () => {
+    const thirdSong = { id: 'song-c', title: 'Third' };
+    const state = playerReducer({
+      ...PLAYER_INITIAL_STATE,
+      queue: [...songs, thirdSong],
+      currentSong: songs[0],
+      currentIndex: 0,
+    }, { type: 'NEXT', index: 2 });
+
+    expect(state).toMatchObject({ currentSong: thirdSong, currentIndex: 2, isPlaying: true });
+  });
+
   test('moves and removes upcoming queue items without losing the current song', () => {
     const thirdSong = { id: 'song-c', title: 'Third' };
     let state = {
