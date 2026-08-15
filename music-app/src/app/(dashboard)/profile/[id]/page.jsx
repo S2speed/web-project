@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useUser } from '@/contexts/UserContext';
-import { followUser, getUserById, unfollowUser, updateUser, uploadAvatar } from '@/lib/mockApi';
+import { followUser, getUserById, unfollowUser, updateUser, uploadAvatar } from '@/lib/api';
 import { DEFAULT_AVATAR, SUBSCRIPTION_LIMITS, SUBSCRIPTION_TYPES as SUBSCRIPTIONS, USER_ROLES as ROLES } from '@/utils/constants';
 
 const subscriptionLabels = {
@@ -96,7 +96,7 @@ export default function ProfilePage() {
 
       if (result.success) {
         setProfileUser(result.data);
-        setIsFollowing(currentUser?.following?.includes(userId) || false);
+        setIsFollowing(Boolean(result.data.isFollowing || currentUser?.following?.includes(userId)));
       } else {
         setProfileUser(null);
         setError('کاربر پیدا نشد');

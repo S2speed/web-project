@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/contexts/UserContext';
-import { createTicket, deleteAccount, getSubscriptionPricing, getUserTickets, updateUser } from '@/lib/mockApi';
+import { createTicket, deleteAccount, getSubscriptionPricing, getUserTickets, updateUser } from '@/lib/api';
 import { SUBSCRIPTION_TYPES as SUBSCRIPTIONS } from '@/utils/constants';
 
 const subscriptionLabels = {
@@ -67,6 +67,7 @@ export default function SettingsPage() {
   const [activeSubscription, setActiveSubscription] = useState(SUBSCRIPTIONS.FREE);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deletePhrase, setDeletePhrase] = useState('');
+  const [deletePassword, setDeletePassword] = useState('');
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
   const [tickets, setTickets] = useState([]);
   const [ticketSaving, setTicketSaving] = useState(false);
@@ -151,10 +152,18 @@ export default function SettingsPage() {
       return;
     }
 
+    if (!deletePassword) {
+      setError('برای حذف حساب، رمز عبور فعلی را وارد کنید.');
+      return;
+    }
+
     setIsSaving(true);
     setError('');
 
-    const result = await deleteAccount(user.id);
+    const result = await deleteAccount(user.id, {
+      password: deletePassword,
+      confirmation: deletePhrase,
+    });
 
     if (result.success) {
       await logout();
@@ -301,7 +310,7 @@ export default function SettingsPage() {
                 <p className="mt-1 text-2xl font-black text-emerald-200">{subscriptionLabels[subscription]}</p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">{subscriptionDescriptions[subscription]}</p>
               </div>
-              <p className="mt-4 text-xs leading-5 text-slate-500">برای ارتقا یا تغییر طرح، به صفحه پرداخت هدایت می‌شوید. اتصال واقعی به درگاه در فاز دوم انجام می‌شود.</p>
+              <p className="mt-4 text-xs leading-5 text-slate-500">برای ارتقا یا تغییر طرح، به صفحه پرداخت متصل به بک‌اند هدایت می‌شوید.</p>
             </section>
           </div>
         </section>
@@ -363,7 +372,7 @@ export default function SettingsPage() {
         <section className="rounded-3xl border border-red-400/20 bg-red-500/10 p-5 md:p-6">
           <h2 className="text-xl font-bold text-red-100">حذف حساب کاربری</h2>
           <p className="mt-2 text-sm leading-6 text-red-100/80">
-            پس از تایید، حساب و داده‌های شخصی وابسته از داده‌های موک حذف می‌شوند و کاربر از سامانه خارج خواهد شد.
+            پس از تایید، حساب و داده‌های شخصی وابسته از پایگاه داده حذف می‌شوند و کاربر از سامانه خارج خواهد شد.
           </p>
           {deleteConfirm && (
             <div className="mt-4 max-w-md rounded-2xl border border-red-300/20 bg-slate-950/40 p-4">
@@ -374,6 +383,17 @@ export default function SettingsPage() {
                 id="deletePhrase"
                 value={deletePhrase}
                 onChange={(event) => setDeletePhrase(event.target.value)}
+                className="mt-3 w-full rounded-xl border border-red-300/20 bg-slate-950 px-3 py-2 text-white outline-none focus:border-red-300"
+              />
+              <label htmlFor="deletePassword" className="mt-4 block text-sm text-red-100">
+                رمز عبور فعلی
+              </label>
+              <input
+                id="deletePassword"
+                type="password"
+                value={deletePassword}
+                onChange={(event) => setDeletePassword(event.target.value)}
+                autoComplete="current-password"
                 className="mt-3 w-full rounded-xl border border-red-300/20 bg-slate-950 px-3 py-2 text-white outline-none focus:border-red-300"
               />
             </div>
@@ -389,7 +409,12 @@ export default function SettingsPage() {
           {deleteConfirm && (
             <button
               type="button"
-              onClick={() => { setDeleteConfirm(false); setDeletePhrase(''); setError(''); }}
+              onClick={() => {
+                setDeleteConfirm(false);
+                setDeletePhrase('');
+                setDeletePassword('');
+                setError('');
+              }}
               className="mr-2 mt-4 rounded-xl bg-white/10 px-5 py-3 text-sm font-bold text-white hover:bg-white/15"
             >
               انصراف

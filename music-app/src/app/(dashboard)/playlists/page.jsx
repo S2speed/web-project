@@ -11,7 +11,7 @@ import {
   getPlaylistById,
   getUserPlaylists,
   renamePlaylist,
-} from '@/lib/mockApi';
+} from '@/lib/api';
 import { DEFAULT_COVER, PLAYLIST_LIMITS, SUBSCRIPTION_TYPES as SUBSCRIPTIONS } from '@/utils/constants';
 
 const subscriptionLabels = {

@@ -11,7 +11,7 @@ import {
   updateAlbum,
   updateSong,
   uploadSong,
-} from '@/lib/mockApi';
+} from '@/lib/api';
 import { USER_ROLES } from '@/utils/constants';
 
 const control = 'mt-2 w-full rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400';

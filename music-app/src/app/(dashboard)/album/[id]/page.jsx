@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { usePlayer } from '@/contexts/PlayerContext';
 import { useUser } from '@/contexts/UserContext';
-import { addSongToPlaylist, getAlbumById, getUserPlaylists, removeSongFromPlaylist } from '@/lib/mockApi';
+import { addSongToPlaylist, getAlbumById, getUserPlaylists, removeSongFromPlaylist } from '@/lib/api';
 import { DEFAULT_COVER } from '@/utils/constants';
 
 export default function AlbumPage() {

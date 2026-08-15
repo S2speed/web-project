@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { usePlayer } from '@/contexts/PlayerContext';
 import { useUser } from '@/contexts/UserContext';
-import { followUser, getArtistById, unfollowUser } from '@/lib/mockApi';
+import { followUser, getArtistById, unfollowUser } from '@/lib/api';
 import { DEFAULT_COVER, SUBSCRIPTION_TYPES as SUBSCRIPTIONS } from '@/utils/constants';
 
 function formatNumber(value) {
@@ -94,7 +94,7 @@ export default function ArtistProfilePage() {
       if (result.success) {
         setArtist(result.data);
         const targetId = result.data.user?.id || result.data.userId || null;
-        setIsFollowing(Boolean(targetId && currentUser?.following?.includes(targetId)));
+        setIsFollowing(Boolean(result.data.isFollowing || (targetId && currentUser?.following?.includes(targetId))));
       } else {
         setArtist(null);
         setError(result.error?.message || 'هنرمند پیدا نشد');

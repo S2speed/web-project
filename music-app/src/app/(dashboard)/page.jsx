@@ -9,7 +9,7 @@ import {
   getNewReleases,
   getRecentlyListenedPlaylists,
   getTrendingSongs,
-} from '@/lib/mockApi';
+} from '@/lib/api';
 import { DEFAULT_AVATAR, DEFAULT_COVER, SUBSCRIPTION_TYPES } from '@/utils/constants';
 
 const subscriptionLabels = {

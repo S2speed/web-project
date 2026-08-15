@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { registerUser } from '@/lib/mockApi';
+import { registerUser } from '@/lib/api';
 import { useUser } from '@/contexts/UserContext';
 
 export default function RegisterPage() {

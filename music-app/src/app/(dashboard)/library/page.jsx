@@ -13,7 +13,7 @@ import {
   getPlaylistById,
   getUserPlaylists,
   removeSongFromPlaylist,
-} from '@/lib/mockApi';
+} from '@/lib/api';
 import { DEFAULT_COVER, LIBRARY_SORT_OPTIONS } from '@/utils/constants';
 import { buildLibraryAlbums, filterAndSortAlbums, filterAndSortSingles, getArtistName } from '@/utils/library';
 

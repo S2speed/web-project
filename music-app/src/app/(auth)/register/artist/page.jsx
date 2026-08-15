@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { registerArtist } from '@/lib/mockApi';
+import { registerArtist } from '@/lib/api';
 
 const genreOptions = [
   { value: '', label: 'انتخاب ژانر...' },

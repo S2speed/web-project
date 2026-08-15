@@ -1,7 +1,8 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef } from 'react';
-import { incrementPlayCount } from '@/lib/mockApi';
+import { getPlaybackQueue, incrementPlayCount, updatePlaybackQueue } from '@/lib/api';
+import { useUser } from '@/contexts/UserContext';
 import { PLAYER_REPEAT_MODES, PLAYER_REPEAT_SEQUENCE, STORAGE_KEYS } from '@/utils/constants';
 
 export const PLAYER_INITIAL_STATE = {
@@ -64,6 +65,22 @@ export function playerReducer(state, action) {
       return { ...state, isPlaying: action.payload };
     case 'SET_QUEUE':
       return { ...state, queue: action.payload, currentIndex: 0 };
+    case 'SET_SERVER_QUEUE': {
+      const queue = action.payload.queue || [];
+      const currentIndex = Math.min(
+        Math.max(Number(action.payload.currentIndex) || 0, 0),
+        Math.max(queue.length - 1, 0),
+      );
+      return {
+        ...state,
+        queue,
+        currentIndex,
+        currentSong: queue[currentIndex] || null,
+        repeatMode: action.payload.repeatMode || state.repeatMode,
+        isShuffle: Boolean(action.payload.isShuffle),
+        duration: Number(queue[currentIndex]?.duration) || 0,
+      };
+    }
     case 'REMOVE_QUEUE_ITEM': {
       const removeIndex = Number(action.index);
       if (
@@ -180,10 +197,24 @@ function createDemoAudioUrl() {
 const PlayerContext = createContext(null);
 
 export function PlayerProvider({ children }) {
+  const { user } = useUser();
   const [state, dispatch] = useReducer(playerReducer, PLAYER_INITIAL_STATE, initializePlayerState);
   const audioRef = useRef(null);
   const fallbackSongRef = useRef('');
   const fallbackUrlRef = useRef('');
+  const serverQueueLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (!user) {
+      serverQueueLoadedRef.current = false;
+      return;
+    }
+    getPlaybackQueue().then((result) => {
+      if (!result.success) return;
+      serverQueueLoadedRef.current = true;
+      if (result.data.queue.length) dispatch({ type: 'SET_SERVER_QUEUE', payload: result.data });
+    });
+  }, [user]);
 
   const playSong = useCallback((song, songs = []) => {
     if (!song) return;
@@ -253,6 +284,14 @@ export function PlayerProvider({ children }) {
       // Playback remains functional when browser storage is unavailable.
     }
   }, [state.queue, state.currentIndex, state.volume, state.repeatMode, state.isShuffle]);
+
+  useEffect(() => {
+    if (!user || !serverQueueLoadedRef.current) return undefined;
+    const timeout = window.setTimeout(() => {
+      updatePlaybackQueue(state.queue, state.currentIndex, state.repeatMode, state.isShuffle);
+    }, 400);
+    return () => window.clearTimeout(timeout);
+  }, [user, state.queue, state.currentIndex, state.repeatMode, state.isShuffle]);
 
   useEffect(() => () => {
     if (fallbackUrlRef.current) URL.revokeObjectURL(fallbackUrlRef.current);

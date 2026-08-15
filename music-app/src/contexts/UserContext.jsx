@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useReducer } from 'react';
-import { getCurrentUser, login as apiLogin, logout as apiLogout } from '@/lib/mockApi';
+import { getCurrentUser, login as apiLogin, logout as apiLogout } from '@/lib/api';
 
 const initialState = {
   user: null,

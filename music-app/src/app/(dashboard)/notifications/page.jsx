@@ -9,7 +9,7 @@ import {
   getUserNotifications,
   markAllNotificationsAsRead,
   markNotificationAsRead,
-} from '@/lib/mockApi';
+} from '@/lib/api';
 import { NOTIFICATION_TYPES, USER_ROLES as ROLES } from '@/utils/constants';
 
 const typeMeta = {
