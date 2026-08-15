@@ -7,6 +7,7 @@ from .views import (
     FollowUserView, UnfollowUserView,
     UserFollowersView, UserFollowingView,
     AppSettingsView, DeleteAccountView,
+    ForgotPasswordView, AdminUserListView,
 )
 
 urlpatterns = [
@@ -16,7 +17,9 @@ urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
     path('refresh/', RefreshTokenView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
+    path('forgot-password/', ForgotPasswordView.as_view(), name='forgot_password'),
     path('me/', UserMeView.as_view(), name='user_me'),
+    path('', AdminUserListView.as_view(), name='admin_user_list'),
     path('settings/', AppSettingsView.as_view(), name='app_settings'),
     path('settings/account/', DeleteAccountView.as_view(), name='delete_account'),
 

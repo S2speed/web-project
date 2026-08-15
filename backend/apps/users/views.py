@@ -1,6 +1,7 @@
 """Authentication views for users app (JWT)."""
 from django.db import transaction
 from django.db.models import Q
+from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -15,6 +16,7 @@ from .serializers import (
     AppSettingsSerializer, DeleteAccountSerializer,
 )
 from apps.support.services import get_user_settings, notify_users
+from .permissions import IsAdmin
 
 
 class LoginView(APIView):
@@ -64,6 +66,30 @@ class UserMeView(APIView):
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
+
+
+class ForgotPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = str(request.data.get('email', '')).strip().lower()
+        if not email:
+            return Response({'email': ['Email is required.']}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'message': 'If an account exists for this email, password reset instructions will be sent.',
+            'email': email,
+        })
+
+
+class AdminUserListView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        users = get_user_model().objects.all().order_by('-created_at')
+        return Response({
+            'count': users.count(),
+            'results': UserProfileSerializer(users, many=True, context={'request': request}).data,
+        })
 
 
 class RegisterView(APIView):
@@ -122,7 +148,7 @@ class UserProfileView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, user_id):
-        user = get_object_or_404(request.user.__class__, id=user_id)
+        user = get_object_or_404(get_user_model(), id=user_id)
         serializer = UserProfileSerializer(user, context={'request': request})
         return Response(serializer.data)
 
@@ -152,7 +178,7 @@ class FollowUserView(APIView):
     def post(self, request):
         serializer = FollowSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            target_user = get_object_or_404(request.user.__class__, id=serializer.validated_data['target_user_id'])
+            target_user = get_object_or_404(get_user_model(), id=serializer.validated_data['target_user_id'])
 
             if request.user.following.filter(id=target_user.id).exists():
                 return Response({'error': 'Already following this user'}, status=status.HTTP_400_BAD_REQUEST)
@@ -172,7 +198,7 @@ class UnfollowUserView(APIView):
     def post(self, request):
         serializer = FollowSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            target_user = get_object_or_404(request.user.__class__, id=serializer.validated_data['target_user_id'])
+            target_user = get_object_or_404(get_user_model(), id=serializer.validated_data['target_user_id'])
 
             if not request.user.following.filter(id=target_user.id).exists():
                 return Response({'error': 'You are not following this user'}, status=status.HTTP_400_BAD_REQUEST)
@@ -190,7 +216,7 @@ class UserFollowersView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, user_id):
-        user = get_object_or_404(request.user.__class__, id=user_id)
+        user = get_object_or_404(get_user_model(), id=user_id)
         followers = user.followers.all()
         serializer = UserProfileSerializer(followers, many=True, context={'request': request})
         return Response({'count': followers.count(), 'results': serializer.data})
@@ -200,7 +226,7 @@ class UserFollowingView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, user_id):
-        user = get_object_or_404(request.user.__class__, id=user_id)
+        user = get_object_or_404(get_user_model(), id=user_id)
         following = user.following.all()
         serializer = UserProfileSerializer(following, many=True, context={'request': request})
         return Response({'count': following.count(), 'results': serializer.data})

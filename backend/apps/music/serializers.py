@@ -159,7 +159,7 @@ class SongCreateSerializer(serializers.ModelSerializer):
 class SongUpdateSerializer(serializers.ModelSerializer):
 	class Meta:
 		model = Song
-		fields = ('title', 'cover', 'lyrics', 'genre', 'is_single', 'featured_artists')
+		fields = ('title', 'album', 'cover', 'lyrics', 'genre', 'is_single', 'featured_artists')
 
 	def validate(self, data):
 		request = self.context.get('request')
@@ -171,8 +171,16 @@ class SongUpdateSerializer(serializers.ModelSerializer):
 		song = self.instance
 		if song.artist != artist:
 			raise serializers.ValidationError('You do not have permission to edit this song')
+		album = data.get('album')
+		if album is not None and album.artist != artist:
+			raise serializers.ValidationError({'album': 'This album does not belong to you'})
 
 		return data
+
+	def update(self, instance, validated_data):
+		if 'album' in validated_data:
+			validated_data['is_single'] = validated_data['album'] is None
+		return super().update(instance, validated_data)
 
 
 class AlbumSerializer(serializers.ModelSerializer):
