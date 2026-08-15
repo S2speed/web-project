@@ -15,12 +15,40 @@ class AlbumBriefSerializer(serializers.ModelSerializer):
 		fields = ('id', 'title', 'cover', 'release_date', 'track_count', 'is_single')
 
 
-class SongBriefSerializer(serializers.ModelSerializer):
+class AudioQualitySerializerMixin:
+	def _file_url(self, file_field):
+		if not file_field:
+			return None
+		url = file_field.url
+		request = self.context.get('request')
+		return request.build_absolute_uri(url) if request else url
+
+	def get_audio_sources(self, obj):
+		sources = {'high': self._file_url(obj.audio_file)}
+		if obj.audio_file_low:
+			sources['low'] = self._file_url(obj.audio_file_low)
+		return sources
+
+	def get_available_qualities(self, obj):
+		return [quality for quality in ('low', 'high') if quality in self.get_audio_sources(obj)]
+
+	def get_default_quality(self, obj):
+		return 'high'
+
+
+class SongBriefSerializer(AudioQualitySerializerMixin, serializers.ModelSerializer):
 	duration_formatted = serializers.SerializerMethodField()
+	audio_sources = serializers.SerializerMethodField()
+	available_qualities = serializers.SerializerMethodField()
+	default_quality = serializers.SerializerMethodField()
 
 	class Meta:
 		model = Song
-		fields = ('id', 'title', 'cover', 'duration', 'duration_formatted', 'play_count', 'listener_count', 'release_date')
+		fields = (
+			'id', 'title', 'cover', 'audio_file', 'audio_file_low',
+			'audio_sources', 'available_qualities', 'default_quality',
+			'duration', 'duration_formatted', 'play_count', 'listener_count', 'release_date',
+		)
 
 	def get_duration_formatted(self, obj):
 		minutes = obj.duration // 60
@@ -91,18 +119,22 @@ class VerifyArtistSerializer(serializers.Serializer):
 		return attrs
 
 
-class SongSerializer(serializers.ModelSerializer):
+class SongSerializer(AudioQualitySerializerMixin, serializers.ModelSerializer):
 	"""Full serializer for Song objects."""
 	artist_name = serializers.CharField(source='artist.stage_name', read_only=True)
 	album_title = serializers.CharField(source='album.title', read_only=True, allow_null=True)
 	duration_formatted = serializers.SerializerMethodField()
 	is_favorite = serializers.SerializerMethodField()
+	audio_sources = serializers.SerializerMethodField()
+	available_qualities = serializers.SerializerMethodField()
+	default_quality = serializers.SerializerMethodField()
 
 	class Meta:
 		model = Song
 		fields = (
 			'id', 'title', 'artist', 'artist_name', 'album', 'album_title',
-			'cover', 'audio_file', 'lyrics', 'duration', 'duration_formatted',
+			'cover', 'audio_file', 'audio_file_low', 'audio_sources',
+			'available_qualities', 'default_quality', 'lyrics', 'duration', 'duration_formatted',
 			'genre', 'release_date', 'is_single', 'play_count', 'listener_count',
 			'is_favorite', 'created_at', 'updated_at'
 		)
@@ -122,12 +154,13 @@ class SongSerializer(serializers.ModelSerializer):
 
 class SongCreateSerializer(serializers.ModelSerializer):
 	audio_file = serializers.FileField(required=True)
+	audio_file_low = serializers.FileField(required=True)
 	cover = serializers.ImageField(required=False)
 
 	class Meta:
 		model = Song
 		fields = (
-			'title', 'album', 'cover', 'audio_file', 'lyrics',
+			'title', 'album', 'cover', 'audio_file', 'audio_file_low', 'lyrics',
 			'duration', 'genre', 'release_date', 'is_single',
 			'featured_artists'
 		)
@@ -159,7 +192,10 @@ class SongCreateSerializer(serializers.ModelSerializer):
 class SongUpdateSerializer(serializers.ModelSerializer):
 	class Meta:
 		model = Song
-		fields = ('title', 'album', 'cover', 'lyrics', 'genre', 'is_single', 'featured_artists')
+		fields = (
+			'title', 'album', 'cover', 'audio_file', 'audio_file_low',
+			'lyrics', 'genre', 'is_single', 'featured_artists',
+		)
 
 	def validate(self, data):
 		request = self.context.get('request')

@@ -39,6 +39,7 @@ export default function ArtistDashboardPage() {
   const [editingSong, setEditingSong] = useState(null);
   const [editingAlbum, setEditingAlbum] = useState(null);
   const [audioFile, setAudioFile] = useState(null);
+  const [audioFileLow, setAudioFileLow] = useState(null);
   const [songCover, setSongCover] = useState(null);
   const [albumCover, setAlbumCover] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -61,8 +62,8 @@ export default function ArtistDashboardPage() {
 
   const saveSong = async (event) => {
     event.preventDefault();
-    if (!editingSong && (!audioFile || !isSupportedAudio(audioFile))) {
-      setNotice({ error: true, text: 'یک فایل صوتی معتبر با فرمت MP3، WAV یا FLAC انتخاب کنید.' });
+    if (!editingSong && (!audioFile || !audioFileLow || !isSupportedAudio(audioFile) || !isSupportedAudio(audioFileLow))) {
+      setNotice({ error: true, text: 'فایل‌های کیفیت بالا و پایین را با فرمت MP3، WAV یا FLAC انتخاب کنید.' });
       return;
     }
     setSaving(true);
@@ -78,12 +79,13 @@ export default function ArtistDashboardPage() {
     };
     const result = editingSong
       ? await updateSong(editingSong.id, payload, songCover)
-      : await uploadSong(payload, audioFile, songCover);
+      : await uploadSong(payload, audioFile, audioFileLow, songCover);
     if (result.success) {
       setNotice({ text: editingSong ? 'اثر ویرایش شد.' : 'اثر جدید منتشر شد.' });
       setSongForm(blankSong());
       setEditingSong(null);
       setAudioFile(null);
+      setAudioFileLow(null);
       setSongCover(null);
       setTab('works');
       await load();
@@ -238,7 +240,7 @@ export default function ArtistDashboardPage() {
 
       {tab === 'upload' && (
         <form onSubmit={saveSong} className="mx-auto max-w-3xl space-y-5 rounded-3xl border border-white/10 bg-white/5 p-5 sm:p-7">
-          <div><h2 className="text-xl font-bold">{editingSong ? `ویرایش ${editingSong.title}` : 'بارگذاری اثر جدید'}</h2><p className="mt-1 text-sm text-slate-400">فرمت‌های صوتی مجاز: MP3، WAV و FLAC</p></div>
+          <div><h2 className="text-xl font-bold">{editingSong ? `ویرایش ${editingSong.title}` : 'بارگذاری اثر جدید'}</h2><p className="mt-1 text-sm text-slate-400">برای اثر جدید، فایل کیفیت بالا و پایین با فرمت MP3، WAV یا FLAC لازم است.</p></div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="نام اثر"><input required value={songForm.title} onChange={(e) => setSongForm({ ...songForm, title: e.target.value })} className={control} /></Field>
             <Field label="ژانر"><input required value={songForm.genre} onChange={(e) => setSongForm({ ...songForm, genre: e.target.value })} className={control} /></Field>
@@ -248,7 +250,8 @@ export default function ArtistDashboardPage() {
           <Field label="هنرمندان همکار"><input value={songForm.featuredArtists} onChange={(e) => setSongForm({ ...songForm, featuredArtists: e.target.value })} className={control} placeholder="نام‌ها را با ویرگول جدا کنید (اختیاری)" /></Field>
           <Field label="متن آهنگ"><textarea rows="5" value={songForm.lyrics} onChange={(e) => setSongForm({ ...songForm, lyrics: e.target.value })} className={control} placeholder="اختیاری" /></Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            {!editingSong && <Field label="فایل صوتی"><input required type="file" accept="audio/mpeg,audio/wav,audio/flac,.mp3,.wav,.flac" onChange={(e) => setAudioFile(e.target.files?.[0] || null)} className={fileControl} /></Field>}
+            {!editingSong && <Field label="فایل صوتی کیفیت بالا"><input required type="file" accept="audio/mpeg,audio/wav,audio/flac,.mp3,.wav,.flac" onChange={(e) => setAudioFile(e.target.files?.[0] || null)} className={fileControl} /></Field>}
+            {!editingSong && <Field label="فایل صوتی کیفیت پایین"><input required type="file" accept="audio/mpeg,audio/wav,audio/flac,.mp3,.wav,.flac" onChange={(e) => setAudioFileLow(e.target.files?.[0] || null)} className={fileControl} /></Field>}
             <Field label={editingSong ? 'تصویر کاور جدید (اختیاری)' : 'تصویر کاور'}><input type="file" accept="image/*" onChange={(e) => setSongCover(e.target.files?.[0] || null)} className={fileControl} /></Field>
           </div>
           <div className="flex gap-2"><button disabled={saving} className="flex-1 rounded-xl bg-emerald-400 py-3 font-bold text-slate-950 disabled:opacity-50">{saving ? 'در حال ذخیره...' : editingSong ? 'ذخیره تغییرات' : 'انتشار اثر'}</button>{editingSong && <button type="button" onClick={() => { setEditingSong(null); setSongForm(blankSong()); setSongCover(null); }} className="rounded-xl bg-white/10 px-5">انصراف</button>}</div>

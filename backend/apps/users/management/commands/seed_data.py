@@ -103,6 +103,7 @@ class Command(BaseCommand):
                         'genre': 'pop',
                         'release_date': timezone.now().date(),
                         'audio_file': 'songs/placeholder.mp3',
+                        'audio_file_low': 'songs/low/placeholder-low.mp3',
                         'is_single': False,
                     }
                 )

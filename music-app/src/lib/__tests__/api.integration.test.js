@@ -1,4 +1,4 @@
-import { getAllSongs, login } from '@/lib/api';
+import { getAllSongs, login, uploadSong } from '@/lib/api';
 
 function response(data, status = 200) {
   return {
@@ -66,6 +66,13 @@ describe('frontend Django API adapter', () => {
         album: null,
         cover: '/media/covers/song.jpg',
         audio_file: '/media/songs/song.mp3',
+        audio_file_low: '/media/songs/low/song.mp3',
+        audio_sources: {
+          low: 'http://localhost:8000/media/songs/low/song.mp3',
+          high: 'http://localhost:8000/media/songs/song.mp3',
+        },
+        available_qualities: ['low', 'high'],
+        default_quality: 'high',
         duration: 180,
         release_date: '2026-08-15',
         is_single: true,
@@ -81,6 +88,12 @@ describe('frontend Django API adapter', () => {
       artistId: 3,
       albumId: null,
       src: 'http://localhost:8000/media/songs/song.mp3',
+      audioSources: {
+        low: 'http://localhost:8000/media/songs/low/song.mp3',
+        high: 'http://localhost:8000/media/songs/song.mp3',
+      },
+      availableQualities: ['low', 'high'],
+      defaultQuality: 'high',
       playCount: 12,
       listeners: 7,
     });
@@ -90,5 +103,38 @@ describe('frontend Django API adapter', () => {
     fetch.mockRejectedValueOnce(new Error('network down'));
     const result = await getAllSongs();
     expect(result).toMatchObject({ success: false, error: { status: 0 } });
+  });
+
+  test('uploads separate low and high quality audio files', async () => {
+    fetch.mockResolvedValueOnce(response({
+      id: 10,
+      title: 'Uploaded Song',
+      artist: 3,
+      artist_name: 'Artist',
+      audio_file: '/media/songs/high.mp3',
+      audio_file_low: '/media/songs/low/low.mp3',
+      audio_sources: {
+        low: 'http://localhost:8000/media/songs/low/low.mp3',
+        high: 'http://localhost:8000/media/songs/high.mp3',
+      },
+      available_qualities: ['low', 'high'],
+      default_quality: 'high',
+      duration: 180,
+      release_date: '2026-08-15',
+      is_single: true,
+    }, 201));
+    const high = new File(['high'], 'high.mp3', { type: 'audio/mpeg' });
+    const low = new File(['low'], 'low.mp3', { type: 'audio/mpeg' });
+
+    const result = await uploadSong({
+      title: 'Uploaded Song',
+      releaseDate: '2026-08-15',
+      featuredArtists: [],
+    }, high, low, null);
+
+    expect(result.success).toBe(true);
+    const requestBody = fetch.mock.calls[0][1].body;
+    expect(requestBody.get('audio_file')).toBe(high);
+    expect(requestBody.get('audio_file_low')).toBe(low);
   });
 });

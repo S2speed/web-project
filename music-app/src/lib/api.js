@@ -44,6 +44,11 @@ const mapSong = (raw = {}) => {
   const artist = typeof raw.artist === 'object'
     ? mapArtist(raw.artist)
     : { id: raw.artist, stageName: raw.artist_name || 'هنرمند' };
+  const audioSources = Object.fromEntries(
+    Object.entries(raw.audio_sources || { high: raw.audio_file })
+      .filter(([, source]) => Boolean(source))
+      .map(([quality, source]) => [quality, resolveBackendAsset(source)]),
+  );
   return {
     id: raw.id,
     title: raw.title,
@@ -52,7 +57,10 @@ const mapSong = (raw = {}) => {
     albumId: raw.album || null,
     album: raw.album ? { id: raw.album, title: raw.album_title || '' } : null,
     cover: resolveBackendAsset(raw.cover, DEFAULT_COVER),
-    src: resolveBackendAsset(raw.audio_file, ''),
+    src: audioSources.high || resolveBackendAsset(raw.audio_file, ''),
+    audioSources,
+    availableQualities: raw.available_qualities || Object.keys(audioSources),
+    defaultQuality: raw.default_quality || 'high',
     lyrics: raw.lyrics || '',
     duration: Number(raw.duration) || 0,
     genre: raw.genre || '',
@@ -668,7 +676,7 @@ export async function completeSandboxPayment(paymentUrl, status = 'success') {
   }
 }
 
-function songForm(data, audio, cover, includeAudio) {
+function songForm(data, audioHigh, audioLow, cover, includeAudio) {
   const form = new FormData();
   append(form, 'title', data.title);
   if (includeAudio) append(form, 'album', data.albumId || '');
@@ -681,7 +689,10 @@ function songForm(data, audio, cover, includeAudio) {
   (data.featuredArtists || []).forEach((artistId) => {
     if (/^\d+$/.test(String(artistId))) form.append('featured_artists', artistId);
   });
-  if (includeAudio) append(form, 'audio_file', audio);
+  if (includeAudio) {
+    append(form, 'audio_file', audioHigh);
+    append(form, 'audio_file_low', audioLow);
+  }
   append(form, 'cover', cover);
   return form;
 }
@@ -702,10 +713,10 @@ async function resolveFeaturedArtists(data) {
   };
 }
 
-export async function uploadSong(data, audio, cover) {
+export async function uploadSong(data, audioHigh, audioLow, cover) {
   const normalized = await resolveFeaturedArtists(data);
   const result = await apiRequest('/music/songs/create/', {
-    method: 'POST', body: songForm(normalized, audio, cover, true),
+    method: 'POST', body: songForm(normalized, audioHigh, audioLow, cover, true),
   });
   return result.success ? ok(mapSong(result.data)) : result;
 }
@@ -713,7 +724,7 @@ export async function uploadSong(data, audio, cover) {
 export async function updateSong(songId, data, cover = null) {
   const normalized = await resolveFeaturedArtists(data);
   const result = await apiRequest(`/music/songs/${songId}/update/`, {
-    method: 'PUT', body: songForm(normalized, null, cover, false),
+    method: 'PUT', body: songForm(normalized, null, null, cover, false),
   });
   return result.success ? ok(mapSong(result.data)) : result;
 }

@@ -51,7 +51,7 @@ class SongAdmin(admin.ModelAdmin):
 	readonly_fields = ('created_at', 'updated_at', 'play_count', 'listener_count')
 
 	fieldsets = (
-		('Main', {'fields': ('title', 'artist', 'album', 'cover', 'audio_file', 'lyrics', 'duration')}),
+		('Main', {'fields': ('title', 'artist', 'album', 'cover', 'audio_file', 'audio_file_low', 'lyrics', 'duration')}),
 		('Classification', {'fields': ('genre', 'release_date', 'is_single', 'featured_artists')}),
 		('Stats', {'fields': ('play_count', 'listener_count')}),
 		('Dates', {'fields': ('created_at', 'updated_at')}),

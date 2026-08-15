@@ -102,7 +102,9 @@ class Song(models.Model):
     artist = models.ForeignKey(Artist, on_delete=models.CASCADE, related_name='songs')
     album = models.ForeignKey(Album, on_delete=models.SET_NULL, null=True, blank=True, related_name='songs')
     cover = models.ImageField(upload_to='covers/songs/', null=True, blank=True)
+    # Kept as the high-quality source for backward compatibility with existing clients.
     audio_file = models.FileField(upload_to='songs/')
+    audio_file_low = models.FileField(upload_to='songs/low/', null=True, blank=True)
     lyrics = models.TextField(blank=True)
     duration = models.PositiveIntegerField(help_text='duration in seconds')
     genre = models.CharField(max_length=50, blank=True)
