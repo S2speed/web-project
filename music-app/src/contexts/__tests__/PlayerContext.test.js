@@ -1,4 +1,9 @@
-import { PLAYER_INITIAL_STATE, playerReducer, resolveSongAudio } from '@/contexts/PlayerContext';
+import {
+  PLAYER_INITIAL_STATE,
+  audioSourcesMatch,
+  playerReducer,
+  resolveSongAudio,
+} from '@/contexts/PlayerContext';
 import { PLAYER_REPEAT_MODES } from '@/utils/constants';
 
 const songs = [
@@ -80,6 +85,19 @@ describe('player reducer', () => {
     expect(resolveSongAudio(song, 'low')).toEqual({ quality: 'low', source: '/low.mp3' });
     expect(resolveSongAudio({ ...song, audioSources: { low: '/low.mp3' } }, 'high'))
       .toEqual({ quality: 'low', source: '/low.mp3' });
+  });
+
+  test('recognizes an already active crossfade source without reloading it', () => {
+    expect(audioSourcesMatch(
+      'http://localhost:8000/media/songs/next.mp3',
+      '/media/songs/next.mp3',
+      'http://localhost:8000/',
+    )).toBe(true);
+    expect(audioSourcesMatch(
+      'http://localhost:8000/media/songs/current.mp3',
+      '/media/songs/next.mp3',
+      'http://localhost:8000/',
+    )).toBe(false);
   });
 
   test('moves and removes upcoming queue items without losing the current song', () => {

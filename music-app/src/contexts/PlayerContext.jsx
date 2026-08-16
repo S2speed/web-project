@@ -203,6 +203,15 @@ export function resolveSongAudio(song, preferredQuality = 'high') {
   return { quality: quality || preferredQuality, source: sources[quality] || song.src || '' };
 }
 
+export function audioSourcesMatch(currentSource, requestedSource, baseUrl = 'http://localhost') {
+  if (!currentSource || !requestedSource) return false;
+  try {
+    return new URL(currentSource, baseUrl).href === new URL(requestedSource, baseUrl).href;
+  } catch {
+    return currentSource === requestedSource;
+  }
+}
+
 function createDemoAudioUrl() {
   const sampleRate = 8000;
   const seconds = 3;
@@ -296,13 +305,19 @@ export function PlayerProvider({ children }) {
     if (!audio || !state.currentSong) return;
     if (crossfadeRef.current && crossfadeCommitRef.current !== state.currentSong.id) cancelCrossfade();
     fallbackSongRef.current = '';
-    if (crossfadeCommitRef.current === state.currentSong.id) {
+    const requestedSource = resolveSongAudio(state.currentSong, state.audioQuality).source;
+    const sourceAlreadyActive = audioSourcesMatch(
+      audio.currentSrc || audio.src,
+      requestedSource,
+      window.location.href,
+    );
+    if (crossfadeCommitRef.current === state.currentSong.id || sourceAlreadyActive) {
       crossfadeCommitRef.current = '';
       dispatch({ type: 'SET_PROGRESS', payload: audio.currentTime || 0 });
       dispatch({ type: 'SET_DURATION', payload: audio.duration || Number(state.currentSong.duration) || 0 });
       return;
     }
-    audio.src = resolveSongAudio(state.currentSong, state.audioQuality).source;
+    audio.src = requestedSource;
     audio.load();
     if (state.isPlaying) audio.play().catch(() => {});
   }, [cancelCrossfade, state.currentSong]);
