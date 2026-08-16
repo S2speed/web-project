@@ -1,0 +1,8 @@
+.env*
+.git
+.gitignore
+.next
+node_modules
+coverage
+npm-debug.log*
+pnpm-debug.log*

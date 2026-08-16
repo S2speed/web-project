@@ -5,6 +5,32 @@ The repository contains:
 - `music-app/`: the Next.js frontend from Phase 1.
 - `backend/`: the Django REST Framework backend for Phase 2.
 
+## Run the full project with Docker
+
+From the repository root, build and start both applications:
+
+```bash
+docker compose up --build
+```
+
+The frontend is available at <http://localhost:3000> and the backend API at
+<http://localhost:8000/api/>. Database records and uploaded media are stored in
+the `backend_data` Docker volume and survive container restarts.
+
+To load the project's sample data after the containers are running:
+
+```bash
+docker compose exec backend python manage.py seed_data
+```
+
+Stop the applications with `Ctrl+C`, then run `docker compose down`. To also
+remove the persisted database and media, run `docker compose down --volumes`.
+
+The optional `FRONTEND_PORT`, `BACKEND_PORT`, `NEXT_PUBLIC_API_URL`,
+`BACKEND_PUBLIC_URL`, `SECRET_KEY`, and `DEBUG` variables can be set in a root
+`.env` file. When changing the public backend port, update both
+`NEXT_PUBLIC_API_URL` and `BACKEND_PUBLIC_URL` to match it.
+
 ## Phase 3: playlists and playback
 
 Phase 3 implements subscription-aware playlists, a synchronized playback queue,
