@@ -69,6 +69,17 @@ export default function Footer() {
           <div className="flex shrink-0 flex-col items-center gap-1">
             <div className="flex items-center gap-2 sm:gap-4">
               <button type="button" onClick={toggleShuffle} aria-pressed={isShuffle} className={`hidden text-sm sm:block ${isShuffle ? '' : 'text-slate-400'}`} style={isShuffle ? { color: playerColor } : undefined}>🔀</button>
+              <button
+                type="button"
+                aria-label="کراس‌فید پنج‌ثانیه‌ای"
+                aria-pressed={isCrossfadeEnabled}
+                title={isCrossfadeEnabled ? 'غیرفعال‌کردن Crossfade' : 'فعال‌کردن Crossfade پنج‌ثانیه‌ای'}
+                onClick={toggleCrossfade}
+                className={`hidden rounded-md border px-1.5 py-1 text-[10px] font-black transition sm:block ${isCrossfadeEnabled ? '' : 'border-white/10 text-slate-400'}`}
+                style={isCrossfadeEnabled ? { borderColor: playerColor, color: playerColor } : undefined}
+              >
+                CF
+              </button>
               <button type="button" aria-label="آهنگ قبلی" onClick={previous} className="transition hover:text-emerald-300">⏮</button>
               <button type="button" aria-label={isPlaying ? 'توقف پخش' : 'پخش'} onClick={togglePlay} disabled={!currentSong} className="flex h-10 w-10 items-center justify-center rounded-full font-bold text-slate-950 transition-colors duration-500 disabled:opacity-40 md:h-11 md:w-11" style={{ backgroundColor: playerColor }}>
                 {isPlaying ? '⏸' : '▶'}
@@ -136,6 +147,17 @@ export default function Footer() {
                   <div className="flex justify-between text-xs text-slate-500"><span>{time(progress)}</span><span>{time(duration)}</span></div>
                   <div className="mt-5 flex items-center justify-center gap-6">
                     <button type="button" onClick={toggleShuffle} className={isShuffle ? '' : 'text-slate-400'} style={isShuffle ? { color: playerColor } : undefined}>🔀</button>
+                    <button
+                      type="button"
+                      aria-label="کراس‌فید پنج‌ثانیه‌ای"
+                      aria-pressed={isCrossfadeEnabled}
+                      title={isCrossfadeEnabled ? 'غیرفعال‌کردن Crossfade' : 'فعال‌کردن Crossfade پنج‌ثانیه‌ای'}
+                      onClick={toggleCrossfade}
+                      className={`rounded-lg border px-2 py-1 text-xs font-black transition ${isCrossfadeEnabled ? '' : 'border-white/10 text-slate-400'}`}
+                      style={isCrossfadeEnabled ? { borderColor: playerColor, color: playerColor } : undefined}
+                    >
+                      CF
+                    </button>
                     <button type="button" onClick={previous} className="text-2xl">⏮</button>
                     <button type="button" onClick={togglePlay} className="flex h-16 w-16 items-center justify-center rounded-full text-2xl text-slate-950 transition-colors duration-500" style={{ backgroundColor: playerColor }}>{isPlaying ? '⏸' : '▶'}</button>
                     <button type="button" onClick={next} className="text-2xl">⏭</button>
