@@ -24,6 +24,7 @@ export default function Footer() {
     queue, currentIndex, playSong, repeatMode, toggleRepeat, isShuffle, toggleShuffle, error,
     removeQueueItem, moveQueueItem, clearUpcoming,
     isCrossfadeEnabled, toggleCrossfade,
+    activeAudioQuality, availableAudioQualities, setAudioQuality,
   } = player;
   const isGold = user?.subscription === SUBSCRIPTION_TYPES.GOLD;
   const repeatLabel = repeatMode === PLAYER_REPEAT_MODES.ONE ? 'تکرار یک' : repeatMode === PLAYER_REPEAT_MODES.ALL ? 'تکرار صف' : 'بدون تکرار';
@@ -83,6 +84,19 @@ export default function Footer() {
           </div>
 
           <div className="hidden w-1/3 items-center justify-end gap-3 md:flex">
+            <label className="flex items-center gap-2 text-xs text-slate-400">
+              کیفیت
+              <select
+                aria-label="کیفیت پخش"
+                value={activeAudioQuality}
+                onChange={(event) => setAudioQuality(event.target.value)}
+                disabled={!currentSong || availableAudioQualities.length < 2}
+                className="rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="low" disabled={!availableAudioQualities.includes('low')}>پایین</option>
+                <option value="high" disabled={!availableAudioQualities.includes('high')}>بالا</option>
+              </select>
+            </label>
             <span className="text-sm">🔊</span>
             <input aria-label="میزان صدا" type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(event.target.value)} className="w-28" style={{ accentColor: playerColor }} />
             <span className="w-9 text-xs text-slate-400">{Math.round(volume * 100)}%</span>
@@ -128,6 +142,21 @@ export default function Footer() {
                     <button type="button" onClick={toggleRepeat} title={repeatLabel} className={repeatMode !== PLAYER_REPEAT_MODES.NONE ? '' : 'text-slate-400'} style={repeatMode !== PLAYER_REPEAT_MODES.NONE ? { color: playerColor } : undefined}>{repeatMode === PLAYER_REPEAT_MODES.ONE ? '🔂' : '🔁'}</button>
                   </div>
                   <div className="mt-6 flex items-center gap-3"><span>🔊</span><input type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(event.target.value)} className="w-full" style={{ accentColor: playerColor }} /></div>
+                  <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4 text-right">
+                    <label htmlFor="expanded-audio-quality" className="block text-sm font-bold">کیفیت پخش</label>
+                    <p className="mt-1 text-xs text-slate-400">کیفیت جدید بدون از دست رفتن موقعیت فعلی آهنگ اعمال می‌شود.</p>
+                    <select
+                      id="expanded-audio-quality"
+                      value={activeAudioQuality}
+                      onChange={(event) => setAudioQuality(event.target.value)}
+                      disabled={!currentSong || availableAudioQualities.length < 2}
+                      className="mt-3 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ borderColor: availableAudioQualities.length > 1 ? colorWithAlpha(playerColor, 0.5) : undefined }}
+                    >
+                      <option value="low" disabled={!availableAudioQualities.includes('low')}>کیفیت پایین</option>
+                      <option value="high" disabled={!availableAudioQualities.includes('high')}>کیفیت بالا</option>
+                    </select>
+                  </div>
                   <button
                     type="button"
                     role="switch"

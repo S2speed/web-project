@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useReducer, useRef }
 import { getPlaybackQueue, incrementPlayCount, updatePlaybackQueue } from '@/lib/api';
 import { useUser } from '@/contexts/UserContext';
 import {
+  PLAYER_AUDIO_QUALITIES,
   PLAYER_CROSSFADE_SECONDS,
   PLAYER_REPEAT_MODES,
   PLAYER_REPEAT_SEQUENCE,
@@ -19,6 +20,7 @@ export const PLAYER_INITIAL_STATE = {
   repeatMode: PLAYER_REPEAT_MODES.NONE,
   isShuffle: false,
   isCrossfadeEnabled: false,
+  audioQuality: 'high',
   progress: 0,
   duration: 0,
   error: '',
@@ -45,6 +47,7 @@ function initializePlayerState(initialState) {
       repeatMode: PLAYER_REPEAT_SEQUENCE.includes(saved.repeatMode) ? saved.repeatMode : initialState.repeatMode,
       isShuffle: Boolean(saved.isShuffle),
       isCrossfadeEnabled: Boolean(saved.isCrossfadeEnabled),
+      audioQuality: PLAYER_AUDIO_QUALITIES.includes(saved.audioQuality) ? saved.audioQuality : initialState.audioQuality,
       duration: Number(saved.queue[currentIndex]?.duration) || 0,
     };
   } catch {
@@ -164,6 +167,10 @@ export function playerReducer(state, action) {
       return { ...state, duration: action.payload };
     case 'SET_VOLUME':
       return { ...state, volume: action.payload };
+    case 'SET_AUDIO_QUALITY':
+      return PLAYER_AUDIO_QUALITIES.includes(action.payload)
+        ? { ...state, audioQuality: action.payload, error: '' }
+        : state;
     case 'TOGGLE_REPEAT': {
       const currentModeIndex = PLAYER_REPEAT_SEQUENCE.indexOf(state.repeatMode);
       const nextMode = PLAYER_REPEAT_SEQUENCE[(currentModeIndex + 1) % PLAYER_REPEAT_SEQUENCE.length];
@@ -178,6 +185,22 @@ export function playerReducer(state, action) {
     default:
       return state;
   }
+}
+
+export function resolveSongAudio(song, preferredQuality = 'high') {
+  if (!song) return { quality: preferredQuality, source: '' };
+  const sources = song.audioSources || {};
+  const availableQualities = PLAYER_AUDIO_QUALITIES.filter((quality) => sources[quality]);
+  if (!availableQualities.length && song.src) return { quality: 'high', source: song.src };
+
+  const quality = availableQualities.includes(preferredQuality)
+    ? preferredQuality
+    : availableQualities.includes(song.defaultQuality)
+      ? song.defaultQuality
+      : availableQualities.includes('high')
+        ? 'high'
+        : availableQualities[0];
+  return { quality: quality || preferredQuality, source: sources[quality] || song.src || '' };
 }
 
 function createDemoAudioUrl() {
@@ -279,7 +302,7 @@ export function PlayerProvider({ children }) {
       dispatch({ type: 'SET_DURATION', payload: audio.duration || Number(state.currentSong.duration) || 0 });
       return;
     }
-    audio.src = state.currentSong.src || '';
+    audio.src = resolveSongAudio(state.currentSong, state.audioQuality).source;
     audio.load();
     if (state.isPlaying) audio.play().catch(() => {});
   }, [cancelCrossfade, state.currentSong]);
@@ -329,11 +352,12 @@ export function PlayerProvider({ children }) {
         repeatMode: state.repeatMode,
         isShuffle: state.isShuffle,
         isCrossfadeEnabled: state.isCrossfadeEnabled,
+        audioQuality: state.audioQuality,
       }));
     } catch {
       // Playback remains functional when browser storage is unavailable.
     }
-  }, [state.queue, state.currentIndex, state.volume, state.repeatMode, state.isShuffle, state.isCrossfadeEnabled]);
+  }, [state.queue, state.currentIndex, state.volume, state.repeatMode, state.isShuffle, state.isCrossfadeEnabled, state.audioQuality]);
 
   useEffect(() => {
     if (!user || !serverQueueLoadedRef.current) return undefined;
@@ -386,13 +410,14 @@ export function PlayerProvider({ children }) {
     }
 
     const nextSong = state.queue[nextIndex];
-    if (!nextSong?.src) return;
+    const nextSource = resolveSongAudio(nextSong, state.audioQuality).source;
+    if (!nextSource) return;
     const incomingIndex = activeAudioIndexRef.current === 0 ? 1 : 0;
     const incoming = audioElementsRef.current[incomingIndex];
     if (!incoming) return;
 
     incoming.pause();
-    incoming.src = nextSong.src;
+    incoming.src = nextSource;
     incoming.currentTime = 0;
     incoming.volume = 0;
     incoming.load();
@@ -420,7 +445,7 @@ export function PlayerProvider({ children }) {
       };
       fade.animationFrame = window.requestAnimationFrame(animate);
     }).catch(cancelCrossfade);
-  }, [cancelCrossfade, finishCrossfade, state.currentIndex, state.isCrossfadeEnabled, state.isPlaying, state.isShuffle, state.queue, state.repeatMode]);
+  }, [cancelCrossfade, finishCrossfade, state.audioQuality, state.currentIndex, state.isCrossfadeEnabled, state.isPlaying, state.isShuffle, state.queue, state.repeatMode]);
 
   const seek = (value) => {
     const audio = audioRef.current;
@@ -433,6 +458,29 @@ export function PlayerProvider({ children }) {
   const setVolume = (value) => {
     const nextVolume = Math.max(0, Math.min(Number(value), 1));
     dispatch({ type: 'SET_VOLUME', payload: nextVolume });
+  };
+
+  const setAudioQuality = (quality) => {
+    if (!PLAYER_AUDIO_QUALITIES.includes(quality) || !state.currentSong) return;
+    const { quality: resolvedQuality, source } = resolveSongAudio(state.currentSong, quality);
+    if (resolvedQuality !== quality || !source) return;
+
+    const audio = audioRef.current;
+    dispatch({ type: 'SET_AUDIO_QUALITY', payload: quality });
+    if (!audio || audio.src === source) return;
+
+    cancelCrossfade();
+    fallbackSongRef.current = '';
+    const playbackTime = audio.currentTime || 0;
+    const shouldResume = state.isPlaying;
+    audio.src = source;
+    audio.addEventListener('loadedmetadata', () => {
+      audio.currentTime = Math.min(playbackTime, Number.isFinite(audio.duration) ? audio.duration : playbackTime);
+      dispatch({ type: 'SET_PROGRESS', payload: audio.currentTime || 0 });
+      dispatch({ type: 'SET_DURATION', payload: audio.duration || Number(state.currentSong?.duration) || 0 });
+      if (shouldResume) audio.play().catch(() => dispatch({ type: 'SET_ERROR', payload: 'تغییر کیفیت پخش ممکن نشد.' }));
+    }, { once: true });
+    audio.load();
   };
 
   const handleError = () => {
@@ -467,6 +515,9 @@ export function PlayerProvider({ children }) {
         toggleRepeat: () => dispatch({ type: 'TOGGLE_REPEAT' }),
         toggleShuffle: () => dispatch({ type: 'TOGGLE_SHUFFLE' }),
         toggleCrossfade: () => dispatch({ type: 'TOGGLE_CROSSFADE' }),
+        setAudioQuality,
+        activeAudioQuality: resolveSongAudio(state.currentSong, state.audioQuality).quality,
+        availableAudioQualities: PLAYER_AUDIO_QUALITIES.filter((quality) => state.currentSong?.audioSources?.[quality] || (quality === 'high' && state.currentSong?.src)),
         setVolume,
         seek,
       }}

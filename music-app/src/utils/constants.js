@@ -74,6 +74,8 @@ export const PLAYER_REPEAT_SEQUENCE = [
 
 export const PLAYER_CROSSFADE_SECONDS = 5;
 
+export const PLAYER_AUDIO_QUALITIES = ['low', 'high'];
+
 export const LIBRARY_SORT_OPTIONS = {
   RELEASE_DATE: "releaseDate",
   LISTENERS: "listeners",

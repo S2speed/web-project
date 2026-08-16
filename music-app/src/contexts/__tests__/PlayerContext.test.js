@@ -1,4 +1,4 @@
-import { PLAYER_INITIAL_STATE, playerReducer } from '@/contexts/PlayerContext';
+import { PLAYER_INITIAL_STATE, playerReducer, resolveSongAudio } from '@/contexts/PlayerContext';
 import { PLAYER_REPEAT_MODES } from '@/utils/constants';
 
 const songs = [
@@ -63,6 +63,23 @@ describe('player reducer', () => {
     }, { type: 'NEXT', index: 2 });
 
     expect(state).toMatchObject({ currentSong: thirdSong, currentIndex: 2, isPlaying: true });
+  });
+
+  test('stores a valid listener quality preference', () => {
+    const state = playerReducer(PLAYER_INITIAL_STATE, { type: 'SET_AUDIO_QUALITY', payload: 'low' });
+    expect(state.audioQuality).toBe('low');
+    expect(playerReducer(state, { type: 'SET_AUDIO_QUALITY', payload: 'ultra' })).toBe(state);
+  });
+
+  test('resolves the requested source and falls back to an available quality', () => {
+    const song = {
+      src: '/high.mp3',
+      audioSources: { low: '/low.mp3', high: '/high.mp3' },
+      defaultQuality: 'high',
+    };
+    expect(resolveSongAudio(song, 'low')).toEqual({ quality: 'low', source: '/low.mp3' });
+    expect(resolveSongAudio({ ...song, audioSources: { low: '/low.mp3' } }, 'high'))
+      .toEqual({ quality: 'low', source: '/low.mp3' });
   });
 
   test('moves and removes upcoming queue items without losing the current song', () => {
