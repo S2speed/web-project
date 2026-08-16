@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePlayer } from '@/contexts/PlayerContext';
 import { useUser } from '@/contexts/UserContext';
 import { DEFAULT_COVER, PLAYER_REPEAT_MODES, SUBSCRIPTION_TYPES } from '@/utils/constants';
+import { colorWithAlpha, DEFAULT_PLAYER_COLOR, extractCoverColor } from '@/utils/coverColor';
 
 const time = (value) => {
   const seconds = Number.isFinite(Number(value)) ? Math.max(0, Math.floor(Number(value))) : 0;
@@ -17,6 +18,7 @@ export default function Footer() {
   const player = usePlayer();
   const { user } = useUser();
   const [expanded, setExpanded] = useState(false);
+  const [playerColor, setPlayerColor] = useState(DEFAULT_PLAYER_COLOR);
   const {
     currentSong, isPlaying, togglePlay, previous, next, progress, duration, seek, volume, setVolume,
     queue, currentIndex, playSong, repeatMode, toggleRepeat, isShuffle, toggleShuffle, error,
@@ -26,9 +28,25 @@ export default function Footer() {
   const isGold = user?.subscription === SUBSCRIPTION_TYPES.GOLD;
   const repeatLabel = repeatMode === PLAYER_REPEAT_MODES.ONE ? 'تکرار یک' : repeatMode === PLAYER_REPEAT_MODES.ALL ? 'تکرار صف' : 'بدون تکرار';
 
+  useEffect(() => {
+    let active = true;
+    extractCoverColor(currentSong?.cover || DEFAULT_COVER).then((color) => {
+      if (active) setPlayerColor(color);
+    });
+    return () => {
+      active = false;
+    };
+  }, [currentSong?.cover]);
+
+  const softPlayerColor = colorWithAlpha(playerColor, 0.18);
+  const faintPlayerColor = colorWithAlpha(playerColor, 0.08);
+
   return (
     <>
-      <footer className="fixed bottom-0 left-0 right-0 z-50 min-h-16 border-t border-white/10 bg-slate-950/95 text-white backdrop-blur md:min-h-24">
+      <footer
+        className="fixed bottom-0 left-0 right-0 z-50 min-h-16 border-t bg-slate-950/95 text-white backdrop-blur transition-colors duration-700 md:min-h-24"
+        style={{ borderColor: softPlayerColor, backgroundImage: `linear-gradient(90deg, ${faintPlayerColor}, transparent 45%, ${faintPlayerColor})` }}
+      >
         <div className="mx-auto flex min-h-16 items-center justify-between gap-2 px-3 md:min-h-20 md:px-5">
           <button type="button" onClick={() => currentSong && setExpanded(true)} className="flex min-w-0 flex-1 items-center gap-2 text-right md:w-1/3 md:flex-none md:gap-3">
             <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-white/10 md:h-14 md:w-14">
@@ -49,24 +67,24 @@ export default function Footer() {
 
           <div className="flex shrink-0 flex-col items-center gap-1">
             <div className="flex items-center gap-2 sm:gap-4">
-              <button type="button" onClick={toggleShuffle} aria-pressed={isShuffle} className={`hidden text-sm sm:block ${isShuffle ? 'text-emerald-300' : 'text-slate-400'}`}>🔀</button>
+              <button type="button" onClick={toggleShuffle} aria-pressed={isShuffle} className={`hidden text-sm sm:block ${isShuffle ? '' : 'text-slate-400'}`} style={isShuffle ? { color: playerColor } : undefined}>🔀</button>
               <button type="button" aria-label="آهنگ قبلی" onClick={previous} className="transition hover:text-emerald-300">⏮</button>
-              <button type="button" aria-label={isPlaying ? 'توقف پخش' : 'پخش'} onClick={togglePlay} disabled={!currentSong} className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-400 font-bold text-slate-950 disabled:opacity-40 md:h-11 md:w-11">
+              <button type="button" aria-label={isPlaying ? 'توقف پخش' : 'پخش'} onClick={togglePlay} disabled={!currentSong} className="flex h-10 w-10 items-center justify-center rounded-full font-bold text-slate-950 transition-colors duration-500 disabled:opacity-40 md:h-11 md:w-11" style={{ backgroundColor: playerColor }}>
                 {isPlaying ? '⏸' : '▶'}
               </button>
               <button type="button" aria-label="آهنگ بعدی" onClick={next} className="transition hover:text-emerald-300">⏭</button>
-              <button type="button" onClick={toggleRepeat} title={repeatLabel} className={`hidden text-sm sm:block ${repeatMode !== PLAYER_REPEAT_MODES.NONE ? 'text-emerald-300' : 'text-slate-400'}`}>{repeatMode === PLAYER_REPEAT_MODES.ONE ? '🔂' : '🔁'}</button>
+              <button type="button" onClick={toggleRepeat} title={repeatLabel} className={`hidden text-sm sm:block ${repeatMode !== PLAYER_REPEAT_MODES.NONE ? '' : 'text-slate-400'}`} style={repeatMode !== PLAYER_REPEAT_MODES.NONE ? { color: playerColor } : undefined}>{repeatMode === PLAYER_REPEAT_MODES.ONE ? '🔂' : '🔁'}</button>
             </div>
             <div className="hidden w-[min(34vw,32rem)] items-center gap-2 text-[10px] text-slate-500 md:flex">
               <span>{time(progress)}</span>
-              <input aria-label="نوار پیشرفت" type="range" min="0" max={duration || 0} step="0.1" value={Math.min(progress, duration || 0)} onChange={(event) => seek(event.target.value)} className="w-full accent-emerald-400" />
+              <input aria-label="نوار پیشرفت" type="range" min="0" max={duration || 0} step="0.1" value={Math.min(progress, duration || 0)} onChange={(event) => seek(event.target.value)} className="w-full" style={{ accentColor: playerColor }} />
               <span>{time(duration)}</span>
             </div>
           </div>
 
           <div className="hidden w-1/3 items-center justify-end gap-3 md:flex">
             <span className="text-sm">🔊</span>
-            <input aria-label="میزان صدا" type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(event.target.value)} className="w-28 accent-emerald-400" />
+            <input aria-label="میزان صدا" type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(event.target.value)} className="w-28" style={{ accentColor: playerColor }} />
             <span className="w-9 text-xs text-slate-400">{Math.round(volume * 100)}%</span>
           </div>
         </div>
@@ -74,7 +92,7 @@ export default function Footer() {
       </footer>
 
       {expanded && (
-        <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950 p-5 text-white md:p-8" dir="rtl">
+        <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950 p-5 text-white transition-colors duration-700 md:p-8" style={{ backgroundImage: `radial-gradient(circle at 50% 10%, ${softPlayerColor}, transparent 38%)` }} dir="rtl">
           <div className="mx-auto max-w-5xl">
             <header className="flex items-center justify-between">
               <div><p className="text-sm text-emerald-300">در حال پخش</p><h2 className="text-2xl font-black">پخش‌کننده موسیقی</h2></div>
@@ -100,25 +118,26 @@ export default function Footer() {
                 </div>
 
                 <div className="mx-auto mt-7 max-w-xl">
-                  <input type="range" min="0" max={duration || 0} step="0.1" value={Math.min(progress, duration || 0)} onChange={(event) => seek(event.target.value)} className="w-full accent-emerald-400" />
+                  <input type="range" min="0" max={duration || 0} step="0.1" value={Math.min(progress, duration || 0)} onChange={(event) => seek(event.target.value)} className="w-full" style={{ accentColor: playerColor }} />
                   <div className="flex justify-between text-xs text-slate-500"><span>{time(progress)}</span><span>{time(duration)}</span></div>
                   <div className="mt-5 flex items-center justify-center gap-6">
-                    <button type="button" onClick={toggleShuffle} className={isShuffle ? 'text-emerald-300' : 'text-slate-400'}>🔀</button>
+                    <button type="button" onClick={toggleShuffle} className={isShuffle ? '' : 'text-slate-400'} style={isShuffle ? { color: playerColor } : undefined}>🔀</button>
                     <button type="button" onClick={previous} className="text-2xl">⏮</button>
-                    <button type="button" onClick={togglePlay} className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-400 text-2xl text-slate-950">{isPlaying ? '⏸' : '▶'}</button>
+                    <button type="button" onClick={togglePlay} className="flex h-16 w-16 items-center justify-center rounded-full text-2xl text-slate-950 transition-colors duration-500" style={{ backgroundColor: playerColor }}>{isPlaying ? '⏸' : '▶'}</button>
                     <button type="button" onClick={next} className="text-2xl">⏭</button>
-                    <button type="button" onClick={toggleRepeat} title={repeatLabel} className={repeatMode !== PLAYER_REPEAT_MODES.NONE ? 'text-emerald-300' : 'text-slate-400'}>{repeatMode === PLAYER_REPEAT_MODES.ONE ? '🔂' : '🔁'}</button>
+                    <button type="button" onClick={toggleRepeat} title={repeatLabel} className={repeatMode !== PLAYER_REPEAT_MODES.NONE ? '' : 'text-slate-400'} style={repeatMode !== PLAYER_REPEAT_MODES.NONE ? { color: playerColor } : undefined}>{repeatMode === PLAYER_REPEAT_MODES.ONE ? '🔂' : '🔁'}</button>
                   </div>
-                  <div className="mt-6 flex items-center gap-3"><span>🔊</span><input type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(event.target.value)} className="w-full accent-emerald-400" /></div>
+                  <div className="mt-6 flex items-center gap-3"><span>🔊</span><input type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(event.target.value)} className="w-full" style={{ accentColor: playerColor }} /></div>
                   <button
                     type="button"
                     role="switch"
                     aria-checked={isCrossfadeEnabled}
                     onClick={toggleCrossfade}
-                    className={`mt-5 flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-sm transition ${isCrossfadeEnabled ? 'border-emerald-400/50 bg-emerald-400/10 text-emerald-200' : 'border-white/10 bg-white/5 text-slate-300'}`}
+                    className={`mt-5 flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-sm transition ${isCrossfadeEnabled ? '' : 'border-white/10 bg-white/5 text-slate-300'}`}
+                    style={isCrossfadeEnabled ? { borderColor: colorWithAlpha(playerColor, 0.5), backgroundColor: softPlayerColor, color: playerColor } : undefined}
                   >
                     <span><strong className="block">Crossfade پنج‌ثانیه‌ای</strong><span className="mt-1 block text-xs text-slate-400">محو تدریجی آهنگ فعلی و شروع هم‌زمان آهنگ بعدی</span></span>
-                    <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${isCrossfadeEnabled ? 'bg-emerald-400' : 'bg-slate-700'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${isCrossfadeEnabled ? 'right-6' : 'right-1'}`} /></span>
+                    <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${isCrossfadeEnabled ? '' : 'bg-slate-700'}`} style={isCrossfadeEnabled ? { backgroundColor: playerColor } : undefined}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${isCrossfadeEnabled ? 'right-6' : 'right-1'}`} /></span>
                   </button>
                 </div>
 
@@ -152,7 +171,7 @@ export default function Footer() {
                 </div>
                 <div className="mt-4 space-y-2">
                   {queue.length ? queue.map((song, index) => (
-                    <div key={`${song.id}-${index}`} className={`flex items-center gap-2 rounded-xl p-2 ${index === currentIndex ? 'bg-emerald-400/15 text-emerald-100' : 'hover:bg-white/10'}`}>
+                    <div key={`${song.id}-${index}`} className={`flex items-center gap-2 rounded-xl p-2 ${index === currentIndex ? '' : 'hover:bg-white/10'}`} style={index === currentIndex ? { backgroundColor: softPlayerColor, color: playerColor } : undefined}>
                       <button type="button" onClick={() => playSong(song, queue)} className="flex min-w-0 flex-1 items-center gap-3 text-right">
                         <span className="w-6 text-xs text-slate-500">{index + 1}</span>
                         <span className="min-w-0 flex-1 truncate text-sm">{song.title}</span>
